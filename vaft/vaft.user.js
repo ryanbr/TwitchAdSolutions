@@ -62,6 +62,7 @@
     let isActivelyStrippingAds = false;
     let localStorageHookFailed = false;
     const twitchWorkers = [];
+    let cachedRootNode = null;// Cached #root DOM element (never changes in React SPAs)
     // Strings used to detect and handle conflicting Twitch worker overrides (e.g. TwitchNoSub)
     const workerStringConflicts = [
         'twitch',
@@ -821,7 +822,10 @@
         }
         function findReactRootNode() {
             let reactRootNode = null;
-            const rootNode = document.querySelector('#root');
+            if (!cachedRootNode) {
+                cachedRootNode = document.querySelector('#root');
+            }
+            const rootNode = cachedRootNode;
             if (rootNode && rootNode._reactRootContainer && rootNode._reactRootContainer._internalRoot && rootNode._reactRootContainer._internalRoot.current) {
                 reactRootNode = rootNode._reactRootContainer._internalRoot.current;
             }
