@@ -124,6 +124,7 @@
                     eval(workerString);
                 `;
                 super(URL.createObjectURL(new Blob([newBlobStr])), options);
+                twitchWorkers.length = 0;
                 twitchWorkers.push(this);
                 this.addEventListener('message', (e) => {
                     if (e.data.key == 'ReloadPlayer') {
