@@ -9,6 +9,7 @@ twitch-videoad.js text/javascript
         return;
     }
     window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
+    // Configuration and state shared between window and worker scopes
     function declareOptions(scope) {
         scope.AdSignifier = 'stitched';
         scope.ClientID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
@@ -50,6 +51,7 @@ twitch-videoad.js text/javascript
     let isActivelyStrippingAds = false;
     let localStorageHookFailed = false;
     const twitchWorkers = [];
+    // Strings used to detect and handle conflicting Twitch worker overrides (e.g. TwitchNoSub)
     const workerStringConflicts = [
         'twitch',
         'isVariantA'// TwitchNoSub
@@ -60,6 +62,7 @@ twitch-videoad.js text/javascript
         'besuper/',// TwitchNoSub (0.9)
         '${patch_url}'// TwitchNoSub (0.9.1)
     ];
+    // Walk the Worker prototype chain and remove conflicting overrides
     function getCleanWorker(worker) {
         let root = null;
         let parent = null;
@@ -106,6 +109,7 @@ twitch-videoad.js text/javascript
             || workerStringAllow.some((x) => workerString.includes(x))
             || workerStringReinsert.some((x) => workerString.includes(x));
     }
+    // Replace window.Worker to intercept Twitch's video worker and inject ad-blocking logic
     function hookWindowWorker() {
         const reinsert = getWorkersForReinsert(window.Worker);
         const newWorker = class Worker extends getCleanWorker(window.Worker) {
@@ -226,6 +230,7 @@ twitch-videoad.js text/javascript
         req.send();
         return req.responseText;
     }
+    // Hook fetch() in the worker scope to intercept m3u8 playlist requests and ad segments
     function hookWorkerFetch() {
         console.log('hookWorkerFetch (vaft)');
         const realFetch = fetch;
@@ -370,6 +375,7 @@ twitch-videoad.js text/javascript
         }
         return newServerTime ? encodingsM3u8.replace(new RegExp('(SERVER-TIME=")[0-9.]+"'), `SERVER-TIME="${newServerTime}"`) : encodingsM3u8;
     }
+    // Remove ad segments from an m3u8 playlist and cache their URLs for replacement
     function stripAdSegments(textStr, stripAllSegments, streamInfo) {
         let hasStrippedAdSegments = false;
         const lines = textStr.replaceAll('\r', '').split('\n');
@@ -410,6 +416,7 @@ twitch-videoad.js text/javascript
         });
         return lines.join('\n');
     }
+    // Find the closest matching stream URL for a given resolution from a master m3u8
     function getStreamUrlForResolution(encodingsM3u8, resolutionInfo) {
         const encodingsLines = encodingsM3u8.replaceAll('\r', '').split('\n');
         const [targetWidth, targetHeight] = resolutionInfo.Resolution.split('x').map(Number);
@@ -441,6 +448,7 @@ twitch-videoad.js text/javascript
         }
         return closestResolutionUrl;
     }
+    // Core ad-blocking logic: detect ads in m3u8, fetch backup streams, strip ad segments
     async function processM3U8(url, textStr, realFetch) {
         const streamInfo = StreamInfosByUrl[url];
         if (!streamInfo) {
@@ -613,6 +621,7 @@ twitch-videoad.js text/javascript
                 return [key, Number.isNaN(num) ? value.startsWith('"') ? JSON.parse(value) : value : num];
             }));
     }
+    // Request a playback access token from Twitch GQL using the given player type
     function getAccessToken(channelName, playerType) {
         const body = {
             operationName: 'PlaybackAccessToken',
@@ -633,6 +642,7 @@ twitch-videoad.js text/javascript
         };
         return gqlRequest(body, playerType);
     }
+    // Send a GQL request to Twitch via the main thread (workers can't make credentialed requests)
     function gqlRequest(body, playerType) {
         if (!GQLDeviceID) {
             GQLDeviceID = '';
@@ -682,6 +692,7 @@ twitch-videoad.js text/javascript
         lastFixTime: 0,
         isLive: true
     };
+    // Poll the player state to detect and fix buffering caused by ad stream switching
     function monitorPlayerBuffering() {
         if (playerForMonitoringBuffering) {
             try {
@@ -781,6 +792,7 @@ twitch-videoad.js text/javascript
             }
         }
     }
+    // Traverse React's fiber tree to find Twitch's player and player state instances
     function getPlayerAndState() {
         function findReactNode(root, constraint) {
             if (root.stateNode && constraint(root.stateNode)) {
@@ -825,6 +837,7 @@ twitch-videoad.js text/javascript
             state: playerState
         };
     }
+    // Pause/play or fully reload the Twitch player, preserving quality/volume settings
     function doTwitchPlayerTask(isPausePlay, isReload) {
         const playerAndState = getPlayerAndState();
         if (!playerAndState) {
@@ -919,6 +932,7 @@ twitch-videoad.js text/javascript
             };
         }
     }
+    // Hook fetch() in the window scope to capture auth headers and modify player type requests
     function hookFetch() {
         const realFetch = window.fetch;
         window.realFetch = realFetch;
@@ -975,6 +989,7 @@ twitch-videoad.js text/javascript
             return realFetch.apply(this, arguments);
         };
     }
+    // Set up visibility overrides and localStorage hooks to preserve player state across reloads
     function onContentLoaded() {
         // This stops Twitch from pausing the player when in another tab and an ad shows.
         // Taken from https://github.com/saucettv/VideoAdBlockForTwitch/blob/cefce9d2b565769c77e3666ac8234c3acfe20d83/chrome/content.js#L30
