@@ -491,7 +491,7 @@
             const currentResolution = streamInfo.Urls[url];
             if (!currentResolution) {
                 console.log('Ads will leak due to missing resolution info for ' + url);
-                return textStr;
+                return stripAdSegments(textStr, false, streamInfo);
             }
             const isHevc = currentResolution.Codecs.startsWith('hev') || currentResolution.Codecs.startsWith('hvc');
             if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && streamInfo.ModifiedM3U8 && !streamInfo.IsUsingModifiedM3U8) {
