@@ -68,7 +68,6 @@
         'twitch',
         'isVariantA'// TwitchNoSub
     ];
-    const workerStringAllow = [];
     const workerStringReinsert = [
         'isVariantA',// TwitchNoSub (prior to (0.9))
         'besuper/',// TwitchNoSub (0.9)
@@ -81,7 +80,7 @@
         let proto = worker;
         while (proto) {
             const workerString = proto.toString();
-            if (workerStringConflicts.some((x) => workerString.includes(x)) && !workerStringAllow.some((x) => workerString.includes(x))) {
+            if (workerStringConflicts.some((x) => workerString.includes(x))) {
                 if (parent !== null) {
                     Object.setPrototypeOf(parent, Object.getPrototypeOf(proto));
                 }
@@ -118,7 +117,6 @@
     function isValidWorker(worker) {
         const workerString = worker.toString();
         return !workerStringConflicts.some((x) => workerString.includes(x))
-            || workerStringAllow.some((x) => workerString.includes(x))
             || workerStringReinsert.some((x) => workerString.includes(x));
     }
     // Replace window.Worker to intercept Twitch's video worker and inject ad-blocking logic
