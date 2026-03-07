@@ -135,6 +135,7 @@
                     return;
                 }
                 const newBlobStr = `
+                    let bypassScriptlet = false;
                     const pendingFetchRequests = new Map();
                     ${stripAdSegments.toString()}
                     ${getStreamUrlForResolution.toString()}
@@ -183,6 +184,13 @@
                                     });
                                     resolve(response);
                                 }
+                            }
+                        } else if (e.data.key == 'BypassScriptlet') {
+                            bypassScriptlet = e.data.value;
+                            if (bypassScriptlet) {
+                                console.log('[AD DEBUG] Scriptlet bypassed — passing through unmodified m3u8');
+                            } else {
+                                console.log('[AD DEBUG] Scriptlet re-enabled');
                             }
                         } else if (e.data.key == 'TriggeredPlayerReload') {
                             HasTriggeredPlayerReload = true;
@@ -461,6 +469,16 @@
         const streamInfo = StreamInfosByUrl[url];
         if (!streamInfo) {
             return textStr;
+        }
+        if (bypassScriptlet) {
+            // Re-enable scriptlet when an ad is detected so we can block it next time
+            const haveAds = textStr.includes(AdSignifier);
+            if (haveAds) {
+                bypassScriptlet = false;
+                console.log('[AD DEBUG] Ad detected while bypassed — re-enabling scriptlet');
+            } else {
+                return textStr;
+            }
         }
         if (HasTriggeredPlayerReload) {
             HasTriggeredPlayerReload = false;
@@ -796,43 +814,34 @@
         playerBufferState.isLive = isLive;
         setTimeout(monitorPlayerBuffering, PlayerBufferingDelay);
     }
-    // Auto-recover from player errors (#2000, #3000, #4000) by reloading the page
+    // Auto-recover from player errors (#2000, #3000, #4000) by bypassing scriptlet and reloading player
+    let scriptletBypassed = false;
     const PLAYER_ERROR_MAX_RETRIES = 3;
-    const PLAYER_ERROR_COOLDOWN = 5000;// 5s cooldown between recovery attempts
-    function getPlayerErrorRetries() {
-        return parseInt(sessionStorage.getItem('twitchAdSolutions_errorRetries') || '0', 10);
-    }
-    function setPlayerErrorRetries(count) {
-        sessionStorage.setItem('twitchAdSolutions_errorRetries', String(count));
-    }
-    function clearPlayerErrorRetries() {
-        sessionStorage.removeItem('twitchAdSolutions_errorRetries');
-    }
-    let lastPlayerErrorTime = 0;
+    let playerErrorRetries = 0;
     function monitorPlayerErrors() {
         const contentGate = document.querySelector('[data-a-target="player-overlay-content-gate"]');
         if (contentGate) {
             const text = contentGate.textContent;
             if (text.includes('#2000') || text.includes('#3000') || text.includes('#4000')) {
-                const now = Date.now();
-                if (now - lastPlayerErrorTime > PLAYER_ERROR_COOLDOWN) {
-                    const retries = getPlayerErrorRetries() + 1;
-                    setPlayerErrorRetries(retries);
-                    lastPlayerErrorTime = now;
-                    if (retries <= PLAYER_ERROR_MAX_RETRIES) {
-                        console.log('[AD DEBUG] Player error detected, reloading page (attempt ' + retries + '/' + PLAYER_ERROR_MAX_RETRIES + ')');
+                playerErrorRetries++;
+                if (playerErrorRetries <= PLAYER_ERROR_MAX_RETRIES) {
+                    console.log('[AD DEBUG] Player error detected, bypassing scriptlet and reloading player (attempt ' + playerErrorRetries + '/' + PLAYER_ERROR_MAX_RETRIES + ')');
+                    scriptletBypassed = true;
+                    postTwitchWorkerMessage('BypassScriptlet', true);
+                    const playerAndState = getPlayerAndState();
+                    if (playerAndState?.player && playerAndState?.state) {
+                        doTwitchPlayerTask(false, true);
+                    } else {
+                        console.log('[AD DEBUG] Player not available, reloading page');
                         window.location.reload();
                         return;
-                    } else {
-                        console.log('[AD DEBUG] Player error persists after ' + PLAYER_ERROR_MAX_RETRIES + ' retries, giving up');
                     }
+                } else if (playerErrorRetries === PLAYER_ERROR_MAX_RETRIES + 1) {
+                    console.log('[AD DEBUG] Player error persists after ' + PLAYER_ERROR_MAX_RETRIES + ' retries, giving up');
                 }
             }
-        } else {
-            // Player is working, clear retry counter
-            if (getPlayerErrorRetries() > 0) {
-                clearPlayerErrorRetries();
-            }
+        } else if (playerErrorRetries > 0) {
+            playerErrorRetries = 0;
         }
         setTimeout(monitorPlayerErrors, 3000);
     }
