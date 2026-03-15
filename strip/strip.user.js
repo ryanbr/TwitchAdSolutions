@@ -13,13 +13,54 @@
 // ==/UserScript==
 (function() {
     'use strict';
+
+    const LogLevel = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+    const CURRENT_LOG_LEVEL = LogLevel.DEBUG;
+    const SCRIPT_NAME = 'strip';
+
+    function createLogger(prefix) {
+        return {
+            debug: (context, message, data) => {
+                if (CURRENT_LOG_LEVEL <= LogLevel.DEBUG) {
+                    console.debug(`[TwitchAdSolutions:${SCRIPT_NAME}] ${context}: ${message}`, data || '');
+                }
+            },
+            info: (context, message, data) => {
+                if (CURRENT_LOG_LEVEL <= LogLevel.INFO) {
+                    console.info(`[TwitchAdSolutions:${SCRIPT_NAME}] ${context}: ${message}`, data || '');
+                }
+            },
+            warn: (context, message, data) => {
+                if (CURRENT_LOG_LEVEL <= LogLevel.WARN) {
+                    console.warn(`[TwitchAdSolutions:${SCRIPT_NAME}] ${context}: ${message}`, data || '');
+                }
+            },
+            error: (context, message, data) => {
+                if (CURRENT_LOG_LEVEL <= LogLevel.ERROR) {
+                    console.error(`[TwitchAdSolutions:${SCRIPT_NAME}] ${context}: ${message}`, data || '');
+                }
+            },
+            success: (context, message, data) => {
+                if (CURRENT_LOG_LEVEL <= LogLevel.INFO) {
+                    console.log(`%c[TwitchAdSolutions:${SCRIPT_NAME}] ${context}: ${message}`, 'color: #4CAF50;', data || '');
+                }
+            }
+        };
+    }
+
+    const logger = createLogger('main');
+
     const ourTwitchAdSolutionsVersion = 20;// Used to prevent conflicts with outdated versions of the scripts
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
-        console.log("skipping strip as there's another script active. ourVersion:" + ourTwitchAdSolutionsVersion + " activeVersion:" + window.twitchAdSolutionsVersion);
+        logger.warn('version-conflict', `Skipping ${SCRIPT_NAME} - another script is active`, {
+            ourVersion: ourTwitchAdSolutionsVersion,
+            activeVersion: window.twitchAdSolutionsVersion
+        });
         window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
         return;
     }
     window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
+    logger.success('init', `Script loaded successfully`, { version: ourTwitchAdSolutionsVersion });
     function declareOptions(scope) {
         scope.ReloadPlayerAfterAds = false;// Doesn't seem to help with high latency
         scope.ReloadPlayerDelay = 10000;
@@ -94,18 +135,59 @@
             || workerStringReinsert.some((x) => workerString.includes(x));
     }
     function hookWindowWorker() {
+        logger.debug('worker-hook', 'Attempting to hook Worker');
         const reinsert = getWorkersForReinsert(window.Worker);
         const newWorker = class Worker extends getCleanWorker(window.Worker) {
             constructor(twitchBlobUrl, options) {
                 let isTwitchWorker = false;
                 try {
                     isTwitchWorker = new URL(twitchBlobUrl).origin.endsWith('.twitch.tv');
-                } catch {}
+                } catch (e) {
+                    logger.error('worker-hook', 'Failed to parse worker URL', { error: e.message, url: twitchBlobUrl });
+                }
                 if (!isTwitchWorker) {
                     super(twitchBlobUrl, options);
                     return;
                 }
+                logger.success('worker-hook', 'Successfully intercepted Twitch worker', { url: twitchBlobUrl });
                 const newBlobStr = `
+                    const LogLevel = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+                    const CURRENT_LOG_LEVEL = LogLevel.DEBUG;
+                    const SCRIPT_NAME = 'strip-worker';
+
+                    function createLogger(prefix) {
+                        return {
+                            debug: (context, message, data) => {
+                                if (CURRENT_LOG_LEVEL <= LogLevel.DEBUG) {
+                                    console.debug(\`[TwitchAdSolutions:\${SCRIPT_NAME}] \${context}: \${message}\`, data || '');
+                                }
+                            },
+                            info: (context, message, data) => {
+                                if (CURRENT_LOG_LEVEL <= LogLevel.INFO) {
+                                    console.info(\`[TwitchAdSolutions:\${SCRIPT_NAME}] \${context}: \${message}\`, data || '');
+                                }
+                            },
+                            warn: (context, message, data) => {
+                                if (CURRENT_LOG_LEVEL <= LogLevel.WARN) {
+                                    console.warn(\`[TwitchAdSolutions:\${SCRIPT_NAME}] \${context}: \${message}\`, data || '');
+                                }
+                            },
+                            error: (context, message, data) => {
+                                if (CURRENT_LOG_LEVEL <= LogLevel.ERROR) {
+                                    console.error(\`[TwitchAdSolutions:\${SCRIPT_NAME}] \${context}: \${message}\`, data || '');
+                                }
+                            },
+                            success: (context, message, data) => {
+                                if (CURRENT_LOG_LEVEL <= LogLevel.INFO) {
+                                    console.log(\`%c[TwitchAdSolutions:\${SCRIPT_NAME}] \${context}: \${message}\`, 'color: #4CAF50;', data || '');
+                                }
+                            }
+                        };
+                    }
+
+                    const workerLogger = createLogger('worker');
+                    workerLogger.success('init', 'Worker started', { timestamp: new Date().toISOString() });
+
                     ${stripAdSegments.toString()}
                     ${hookWorkerFetch.toString()}
                     ${declareOptions.toString()}
@@ -117,7 +199,7 @@
                     self.addEventListener('message', function(e) {
                         if (e.data.key == 'AllSegmentsAreAdSegments') {
                             AllSegmentsAreAdSegments = !AllSegmentsAreAdSegments;
-                            console.log('AllSegmentsAreAdSegments: ' + AllSegmentsAreAdSegments);
+                            workerLogger.info('all-segments-ad', 'AllSegmentsAreAdSegments toggled', { value: AllSegmentsAreAdSegments });
                         }
                     });
                     hookWorkerFetch();
@@ -170,8 +252,9 @@
             set: function(value) {
                 if (isValidWorker(value)) {
                     workerInstance = value;
+                    logger.info('worker-hook', 'Worker was replaced with valid worker');
                 } else {
-                    console.log('Attempt to set twitch worker denied');
+                    logger.warn('worker-hook', 'Attempt to set Twitch worker denied - invalid worker detected');
                 }
             }
         });
@@ -184,11 +267,12 @@
         return req.responseText;
     }
     function hookWorkerFetch() {
-        console.log('hookWorkerFetch (strip)');
+        workerLogger.info('fetch-hook', 'hookWorkerFetch started');
         const realFetch = fetch;
         fetch = async function(url, options) {
             if (typeof url === 'string') {
                 if (AdSegmentCache.has(url)) {
+                    workerLogger.debug('ad-cache', 'Serving cached ad segment', { url: url.substring(0, 100) });
                     return new Promise(function(resolve, reject) {
                         const processAfter = async function(response) {
                             if (response.status === 200) {
@@ -205,10 +289,13 @@
                     });
                 }
                 if (M3U8Whitelist.has(url)) {
+                    workerLogger.debug('m3u8-whitelist', 'Processing whitelisted M3U8', { url: url.substring(0, 100) });
                     return new Promise(function(resolve, reject) {
                         const processAfter = async function(response) {
                             if (response.status === 200) {
-                                resolve(new Response(stripAdSegments(await response.text())));
+                                const stripped = stripAdSegments(await response.text());
+                                workerLogger.debug('m3u8-stripped', 'M3U8 ad stripping complete', { originalLength: (await response.text()).length, strippedLength: stripped.length });
+                                resolve(new Response(stripped));
                             } else {
                                 resolve(response);
                             }
@@ -221,6 +308,7 @@
                     });
                 } else if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
                     V2API = url.includes('/api/v2/');
+                    workerLogger.debug('channel-hls', 'Intercepted channel HLS request', { url: url.substring(0, 100), isV2: V2API });
                     return new Promise(function(resolve, reject) {
                         const processAfter = async function(response) {
                             if (response.status === 200) {
@@ -233,19 +321,24 @@
                                     M3U8ChannelCache.set(channelName, encodingsM3u8);
                                 }
                                 const lines = encodingsM3u8.replaceAll('\r', '').split('\n');
+                                let streamCount = 0;
                                 for (let i = 0; i < lines.length - 1; i++) {
                                     if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
                                         M3U8Whitelist.add(lines[i + 1]);
+                                        streamCount++;
                                     }
                                 }
+                                workerLogger.success('channel-hls', 'Channel HLS processed', { channel: channelName, streamsFound: streamCount });
                                 resolve(new Response(encodingsM3u8));
                             } else {
+                                workerLogger.warn('channel-hls', 'Channel HLS request failed', { status: response.status });
                                 resolve(response);
                             }
                         };
                         realFetch(url, options).then(function(response) {
                             processAfter(response);
                         })['catch'](function(err) {
+                            workerLogger.error('channel-hls', 'Channel HLS fetch error', { error: err.message });
                             reject(err);
                         });
                     });
@@ -274,9 +367,10 @@
         const lines = textStr.replaceAll('\r', '').split('\n');
         const newAdUrl = 'https://twitch.tv';
         let isLastSegmentLive = false;
+        let adMarkerFound = false;
+        let segmentsFound = 0;
         for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
-            // Remove tracking urls which appear in the overlay UI
             lines[i] = line
                 .replaceAll(/(X-TV-TWITCH-AD-URL=")(?:[^"]*)(")/g, `$1${newAdUrl}$2`)
                 .replaceAll(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")(?:[^"]*)(")/g, `$1${newAdUrl}$2`);
@@ -284,6 +378,7 @@
                 const segmentUrl = lines[i + 1];
                 if (!AdSegmentCache.has(segmentUrl)) {
                     NumStrippedSegments++;
+                    segmentsFound++;
                 }
                 AdSegmentCache.set(segmentUrl, Date.now());
                 hasStrippedAdSegments = true;
@@ -292,6 +387,7 @@
                 isLastSegmentLive = line.includes(',live');
             }
             if (line.includes('stitched-ad')) {
+                adMarkerFound = true;
                 hasStrippedAdSegments = true;
                 isLastSegmentLive = false;
             }
@@ -300,19 +396,30 @@
             }
         }
         if (isLastSegmentLive) {
-            // NOTE: If the player position is far behind the buffer position it'll hide the banner before playback
             hasStrippedAdSegments = false;
         }
         if (hasStrippedAdSegments) {
-            // No low latency during ads (otherwise it's possible for the player to prefetch and display ad segments)
+            if (segmentsFound > 0) {
+                workerLogger.success('ad-stripping', `Stripping ${segmentsFound} new ad segments`, { 
+                    isMidroll: isMidroll, 
+                    totalStripped: NumStrippedSegments,
+                    adMarkerFound: adMarkerFound
+                });
+            } else if (NumStrippedSegments > 0) {
+                workerLogger.info('ad-stripping', `Continuing to block ${NumStrippedSegments} cached ad segments`, { isMidroll: isMidroll });
+            }
             for (let i = 0; i < lines.length; i++) {
                 if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) {
                     lines[i] = '';
                 }
             }
         } else {
+            if (NumStrippedSegments > 0) {
+                workerLogger.info('ad-complete', `Ad blocking complete, resetting segment counter`, { wasMidroll: isMidroll });
+            }
             if (NumStrippedSegments > 0 && ReloadPlayerAfterAds) {
                 postMessage({key:'ReloadPlayer'});
+                workerLogger.info('ad-complete', 'Triggering player reload after ads');
             }
             NumStrippedSegments = 0;
         }
@@ -330,11 +437,13 @@
         return lines.join('\n');
     }
     function hookFetch() {
+        logger.debug('fetch-hook', 'Starting main page fetch hook');
         const realFetch = window.fetch;
         window.realFetch = realFetch;
         window.fetch = function(url, init, ...args) {
             if (typeof url === 'string') {
                 if (url.includes('gql')) {
+                    logger.debug('gql-request', 'Intercepted GQL request', { url: url.substring(0, 100) });
                     if (ForceAccessTokenPlayerType && typeof init.body === 'string' && init.body.includes('PlaybackAccessToken') && !init.body.includes('picture-by-picture') && !init.body.includes('frontpage')) {
                         let replacedPlayerType = '';
                         const newBody = JSON.parse(init.body);
@@ -352,7 +461,10 @@
                             }
                         }
                         if (replacedPlayerType) {
-                            console.log(`Replaced '${replacedPlayerType}' player type with '${ForceAccessTokenPlayerType}' player type`);
+                            logger.success('player-type', `Replaced '${replacedPlayerType}' player type with '${ForceAccessTokenPlayerType}'`, {
+                                original: replacedPlayerType,
+                                replacement: ForceAccessTokenPlayerType
+                            });
                             init.body = JSON.stringify(newBody);
                         }
                     }
@@ -363,11 +475,11 @@
                             for (let i = 0; i < newBody2.length; i++) {
                                 if (newBody2[i]?.operationName == 'ContentClassificationContext') {
                                     hasRemovedClassification = true;
-                                    // Doesn't seem like it if we remove this element from the array so instead we duplicate another entry into this index. TODO: Find out why
                                     newBody2[i] = newBody2[i == 0 && newBody2.length > 1 ? 1 : 0];
                                 }
                             }
                             if (hasRemovedClassification) {
+                                logger.info('content-classification', 'Removed ContentClassificationContext from request');
                                 init.body = JSON.stringify(newBody2);
                             }
                         }
@@ -378,9 +490,7 @@
         };
     }
     function reloadTwitchPlayer(isPausePlay) {
-        // Taken from ttv-tools / ffz
-        // https://github.com/Nerixyz/ttv-tools/blob/master/src/context/twitch-player.ts
-        // https://github.com/FrankerFaceZ/FrankerFaceZ/blob/master/src/sites/twitch-twilight/modules/player.jsx
+        logger.info('player-reload', 'Attempting to reload player', { isPausePlay: isPausePlay || false });
         function findReactNode(root, constraint) {
             if (root.stateNode && constraint(root.stateNode)) {
                 return root.stateNode;
@@ -411,29 +521,32 @@
         }
         const reactRootNode = findReactRootNode();
         if (!reactRootNode) {
-            console.log('Could not find react root');
+            logger.error('player-reload', 'Could not find React root node');
             return;
         }
         let player = findReactNode(reactRootNode, node => node.setPlayerActive && node.props && node.props.mediaPlayerInstance);
         player = player && player.props && player.props.mediaPlayerInstance ? player.props.mediaPlayerInstance : null;
         const playerState = findReactNode(reactRootNode, node => node.setSrc && node.setInitialPlaybackSettings);
         if (!player) {
-            console.log('Could not find player');
+            logger.error('player-reload', 'Could not find player element');
             return;
         }
         if (!playerState) {
-            console.log('Could not find player state');
+            logger.error('player-reload', 'Could not find player state');
             return;
         }
         if (player.paused || player.core?.paused) {
+            logger.debug('player-reload', 'Player is paused, skipping reload');
             return;
         }
         if (isPausePlay) {
             player.pause();
             player.play();
+            logger.success('player-reload', 'Performed pause/play to fix buffering');
             return;
         }
         if (LastPlayerReload > Date.now() - ReloadPlayerDelay) {
+            logger.debug('player-reload', 'Skipping reload - too soon since last reload');
             return;
         }
         LastPlayerReload = Date.now();
@@ -454,8 +567,10 @@
             if (localStorageHookFailed && player?.core?.state?.quality?.group) {
                 localStorage.setItem(lsKeyQuality, JSON.stringify({default:player.core.state.quality.group}));
             }
-        } catch {}
-        console.log('Reloading Twitch player');
+        } catch (e) {
+            logger.warn('player-reload', 'Failed to read/write localStorage', { error: e.message });
+        }
+        logger.success('player-reload', 'Reloading Twitch player to restore playback');
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
         player.play();
         if (localStorageHookFailed && (currentQualityLS || currentMutedLS || currentVolumeLS)) {
@@ -475,14 +590,14 @@
         }
     }
     function onContentLoaded() {
-        // Hooks for preserving volume / resolution
+        logger.debug('dom-ready', 'DOM content loaded, setting up localStorage hooks');
         try {
             const keysToCache = [
                 'video-quality',
                 'video-muted',
                 'volume',
-                'lowLatencyModeEnabled',// Low Latency
-                'persistenceEnabled',// Mini Player
+                'lowLatencyModeEnabled',
+                'persistenceEnabled',
             ];
             const cachedValues = new Map();
             for (let i = 0; i < keysToCache.length; i++) {
@@ -503,12 +618,13 @@
                 return realGetItem.apply(this, arguments);
             };
             if (!localStorage.getItem.toString().includes(Object.keys({cachedValues})[0])) {
-                // These hooks are useful to preserve player state on player reload
-                // Firefox doesn't allow hooking of localStorage functions but chrome does
                 localStorageHookFailed = true;
+                logger.warn('localStorage', 'LocalStorage hooks failed - using fallback method');
+            } else {
+                logger.success('localStorage', 'LocalStorage hooks installed successfully');
             }
         } catch (err) {
-            console.log('localStorageHooks failed ' + err)
+            logger.error('localStorage', 'LocalStorage hooks failed', { error: err.message });
             localStorageHookFailed = true;
         }
     }

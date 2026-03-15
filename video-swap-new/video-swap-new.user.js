@@ -13,13 +13,54 @@
 // ==/UserScript==
 (function() {
     'use strict';
+
+    const LogLevel = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+    const CURRENT_LOG_LEVEL = LogLevel.DEBUG;
+    const SCRIPT_NAME = 'video-swap-new';
+
+    function createLogger(prefix) {
+        return {
+            debug: (context, message, data) => {
+                if (CURRENT_LOG_LEVEL <= LogLevel.DEBUG) {
+                    console.debug(`[TwitchAdSolutions:${SCRIPT_NAME}] ${context}: ${message}`, data || '');
+                }
+            },
+            info: (context, message, data) => {
+                if (CURRENT_LOG_LEVEL <= LogLevel.INFO) {
+                    console.info(`[TwitchAdSolutions:${SCRIPT_NAME}] ${context}: ${message}`, data || '');
+                }
+            },
+            warn: (context, message, data) => {
+                if (CURRENT_LOG_LEVEL <= LogLevel.WARN) {
+                    console.warn(`[TwitchAdSolutions:${SCRIPT_NAME}] ${context}: ${message}`, data || '');
+                }
+            },
+            error: (context, message, data) => {
+                if (CURRENT_LOG_LEVEL <= LogLevel.ERROR) {
+                    console.error(`[TwitchAdSolutions:${SCRIPT_NAME}] ${context}: ${message}`, data || '');
+                }
+            },
+            success: (context, message, data) => {
+                if (CURRENT_LOG_LEVEL <= LogLevel.INFO) {
+                    console.log(`%c[TwitchAdSolutions:${SCRIPT_NAME}] ${context}: ${message}`, 'color: #4CAF50;', data || '');
+                }
+            }
+        };
+    }
+
+    const logger = createLogger('main');
+
     const ourTwitchAdSolutionsVersion = 26;// Used to prevent conflicts with outdated versions of the scripts
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
-        console.log("skipping video-swap-new as there's another script active. ourVersion:" + ourTwitchAdSolutionsVersion + " activeVersion:" + window.twitchAdSolutionsVersion);
+        logger.warn('version-conflict', `Skipping ${SCRIPT_NAME} - another script is active`, {
+            ourVersion: ourTwitchAdSolutionsVersion,
+            activeVersion: window.twitchAdSolutionsVersion
+        });
         window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
         return;
     }
     window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
+    logger.success('init', `Script loaded successfully`, { version: ourTwitchAdSolutionsVersion });
     function declareOptions(scope) {
         // Options / globals
         scope.OPT_BACKUP_PLAYER_TYPES = [ 'autoplay', 'picture-by-picture', /*'autoplay-ALT',*/ 'embed' ];
@@ -101,18 +142,59 @@
             || workerStringReinsert.some((x) => workerString.includes(x));
     }
     function hookWindowWorker() {
+        logger.debug('worker-hook', 'Attempting to hook Worker');
         const reinsert = getWorkersForReinsert(window.Worker);
         const newWorker = class Worker extends getCleanWorker(window.Worker) {
             constructor(twitchBlobUrl, options) {
                 let isTwitchWorker = false;
                 try {
                     isTwitchWorker = new URL(twitchBlobUrl).origin.endsWith('.twitch.tv');
-                } catch {}
+                } catch (e) {
+                    logger.error('worker-hook', 'Failed to parse worker URL', { error: e.message, url: twitchBlobUrl });
+                }
                 if (!isTwitchWorker) {
                     super(twitchBlobUrl, options);
                     return;
                 }
+                logger.success('worker-hook', 'Successfully intercepted Twitch worker', { url: twitchBlobUrl });
                 const newBlobStr = `
+                    const LogLevel = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+                    const CURRENT_LOG_LEVEL = LogLevel.DEBUG;
+                    const SCRIPT_NAME = 'video-swap-worker';
+
+                    function createLogger(prefix) {
+                        return {
+                            debug: (context, message, data) => {
+                                if (CURRENT_LOG_LEVEL <= LogLevel.DEBUG) {
+                                    console.debug(\`[TwitchAdSolutions:\${SCRIPT_NAME}] \${context}: \${message}\`, data || '');
+                                }
+                            },
+                            info: (context, message, data) => {
+                                if (CURRENT_LOG_LEVEL <= LogLevel.INFO) {
+                                    console.info(\`[TwitchAdSolutions:\${SCRIPT_NAME}] \${context}: \${message}\`, data || '');
+                                }
+                            },
+                            warn: (context, message, data) => {
+                                if (CURRENT_LOG_LEVEL <= LogLevel.WARN) {
+                                    console.warn(\`[TwitchAdSolutions:\${SCRIPT_NAME}] \${context}: \${message}\`, data || '');
+                                }
+                            },
+                            error: (context, message, data) => {
+                                if (CURRENT_LOG_LEVEL <= LogLevel.ERROR) {
+                                    console.error(\`[TwitchAdSolutions:\${SCRIPT_NAME}] \${context}: \${message}\`, data || '');
+                                }
+                            },
+                            success: (context, message, data) => {
+                                if (CURRENT_LOG_LEVEL <= LogLevel.INFO) {
+                                    console.log(\`%c[TwitchAdSolutions:\${SCRIPT_NAME}] \${context}: \${message}\`, 'color: #4CAF50;', data || '');
+                                }
+                            }
+                        };
+                    }
+
+                    const workerLogger = createLogger('worker');
+                    workerLogger.success('init', 'Worker started', { timestamp: new Date().toISOString() });
+
                     const pendingFetchRequests = new Map();
                     ${stripAdSegments.toString()}
                     ${processM3U8.toString()}
@@ -136,19 +218,22 @@
                     self.addEventListener('message', function(e) {
                         if (e.data.key == 'UboUpdateDeviceId') {
                             gql_device_id = e.data.value;
+                            workerLogger.info('client-update', 'gql_device_id updated', { value: e.data.value });
                         } else if (e.data.key == 'UpdateClientIntegrityHeader') {
                             ClientIntegrityHeader = e.data.value;
+                            workerLogger.info('client-update', 'ClientIntegrityHeader updated', { value: e.data.value });
                         } else if (e.data.key == 'UpdateAuthorizationHeader') {
                             AuthorizationHeader = e.data.value;
+                            workerLogger.info('client-update', 'AuthorizationHeader updated', { value: e.data.value });
                         } else if (e.data.key == 'FetchResponse') {
                             const responseData = e.data.value;
                             if (pendingFetchRequests.has(responseData.id)) {
                                 const { resolve, reject } = pendingFetchRequests.get(responseData.id);
                                 pendingFetchRequests.delete(responseData.id);
                                 if (responseData.error) {
+                                    workerLogger.warn('fetch-response', 'Fetch failed', { error: responseData.error });
                                     reject(new Error(responseData.error));
                                 } else {
-                                    // Create a Response object from the response data
                                     const response = new Response(responseData.body, {
                                         status: responseData.status,
                                         statusText: responseData.statusText,
@@ -159,10 +244,10 @@
                             }
                         } else if (e.data.key == 'SimulateAds') {
                             SimulatedAdsDepth = e.data.value;
-                            console.log('SimulatedAdsDepth: ' + SimulatedAdsDepth);
+                            workerLogger.info('ad-simulate', 'SimulatedAdsDepth updated', { value: SimulatedAdsDepth });
                         } else if (e.data.key == 'AllSegmentsAreAdSegments') {
                             AllSegmentsAreAdSegments = !AllSegmentsAreAdSegments;
-                            console.log('AllSegmentsAreAdSegments: ' + AllSegmentsAreAdSegments);
+                            workerLogger.info('all-segments-ad', 'AllSegmentsAreAdSegments toggled', { value: AllSegmentsAreAdSegments });
                         }
                     });
                     hookWorkerFetch();
@@ -200,8 +285,9 @@
             set: function(value) {
                 if (isValidWorker(value)) {
                     workerInstance = value;
+                    logger.info('worker-hook', 'Worker was replaced with valid worker');
                 } else {
-                    console.log('Attempt to set twitch worker denied');
+                    logger.warn('worker-hook', 'Attempt to set Twitch worker denied - invalid worker detected');
                 }
             }
         });
@@ -424,11 +510,12 @@
         return textStr;
     }
     function hookWorkerFetch() {
-        console.log('hookWorkerFetch (video-swap-new)');
+        workerLogger.info('fetch-hook', 'hookWorkerFetch started');
         const realFetch = fetch;
         fetch = async function(url, options) {
             if (typeof url === 'string') {
                 if (AdSegmentCache.has(url)) {
+                    workerLogger.debug('ad-cache', 'Serving cached ad segment', { url: url.substring(0, 100) });
                     return new Promise(function(resolve, reject) {
                         realFetch('data:video/mp4;base64,AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA', options).then(function(response) {
                             resolve(response);
@@ -439,6 +526,7 @@
                 }
                 url = url.trimEnd();
                 if (url.endsWith('m3u8')) {
+                    workerLogger.debug('m3u8-request', 'Intercepted M3U8 request', { url: url.substring(0, 100) });
                     return new Promise(function(resolve, reject) {
                         const processAfter = async function(response) {
                             if (response.status === 200) {
@@ -449,13 +537,14 @@
                                     headers: response.headers
                                 }));
                             } else {
+                                workerLogger.warn('m3u8-request', 'M3U8 request failed', { status: response.status });
                                 resolve(response);
                             }
                         };
                         realFetch(url, options).then(function(response) {
                             processAfter(response);
                         })['catch'](function(err) {
-                            console.log('fetch hook err ' + err);
+                            workerLogger.error('m3u8-request', 'Fetch error', { error: err.message });
                             reject(err);
                         });
                     });
@@ -463,8 +552,8 @@
                 else if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
                     V2API = url.includes('/api/v2/');
                     const channelName = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/)[0];
+                    workerLogger.debug('channel-hls', 'Intercepted channel HLS request', { channel: channelName, isV2: V2API });
                     if (OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE) {
-                        // parent_domains is used to determine if the player is embeded and stripping it gets rid of fake ads
                         const tempUrl = new URL(url);
                         tempUrl.searchParams.delete('parent_domains');
                         url = tempUrl.toString();
