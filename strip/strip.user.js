@@ -224,10 +224,10 @@
                     return new Promise(function(resolve, reject) {
                         const processAfter = async function(response) {
                             if (response.status === 200) {
-                                const channelName = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/)[0];
+                                const channelName = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/)?.[0];
                                 let encodingsM3u8 = await response.text();
                                 const cachedM3u8 = M3U8ChannelCache.get(channelName);
-                                if (cachedM3u8 && (await realFetch(cachedM3u8.match(/^https:.*\.m3u8$/m)[0])).status === 200) {
+                                if (cachedM3u8 && (await realFetch(cachedM3u8.match(/^https:.*\.m3u8$/m)?.[0])).status === 200) {
                                     encodingsM3u8 = replaceServerTimeInM3u8(cachedM3u8, getServerTimeFromM3u8(encodingsM3u8));
                                 } else if (encodingsM3u8.includes('.m3u8')) {
                                     M3U8ChannelCache.set(channelName, encodingsM3u8);

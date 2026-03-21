@@ -294,7 +294,7 @@
                                             if (normalLines[j].startsWith('#EXT-X-STREAM-INF')) {
                                                 const resSettings = parseAttributes(normalLines[j].substring(normalLines[j].indexOf(':') + 1));
                                                 const lowResUrl = getStreamUrlForResolution(encodingsM3u8, streamInfo.Urls.get(normalLines[j + 1].trimEnd()));
-                                                const lowResInf = encodingsM3u8.match(new RegExp(`^.*(?=\n.*${lowResUrl})`, 'm'))[0];
+                                                const lowResInf = encodingsM3u8.match(new RegExp(`^.*(?=\n.*${lowResUrl})`, 'm'))?.[0];
                                                 const lowResSettings = parseAttributes(lowResInf.substring(lowResInf.indexOf(':') + 1));
                                                 //console.log('map ' + resSettings['RESOLUTION'] + ' to ' + lowResSettings['RESOLUTION']);
                                                 const codecsKey = 'CODECS';
@@ -394,7 +394,7 @@
         }
         const haveAdTags = hasAdTags(textStr) || (SimulatedAdsDepth > 0 && (!streamInfo.BackupEncodings || !streamInfo.BackupEncodings.includes(url) || SimulatedAdsDepth - 1 > streamInfo.BackupEncodingsPlayerTypeIndex));
         if (streamInfo.BackupEncodings) {
-            const streamM3u8Url = streamInfo.Encodings.match(/^https:.*\.m3u8$/m)[0];
+            const streamM3u8Url = streamInfo.Encodings.match(/^https:.*\.m3u8$/m)?.[0];
             const streamM3u8Response = await realFetch(streamM3u8Url);
             if (streamM3u8Response.status == 200) {
                 const streamM3u8 = await streamM3u8Response.text();
@@ -474,7 +474,7 @@
                 }
                 else if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
                     V2API = url.includes('/api/v2/');
-                    const channelName = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/)[0];
+                    const channelName = (new URL(url)).pathname.match(/([^\/]+)(?=\.\w+$)/)?.[0];
                     if (OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE) {
                         // parent_domains is used to determine if the player is embeded and stripping it gets rid of fake ads
                         const tempUrl = new URL(url);
@@ -485,7 +485,7 @@
                         // - First m3u8 request is the m3u8 with the video encodings (360p,480p,720p,etc).
                         // - Second m3u8 request is the m3u8 for the given encoding obtained in the first request. At this point we will know if there's ads.
                         let streamInfo = StreamInfos[channelName];
-                        if (streamInfo != null && streamInfo.Encodings != null && (await realFetch(streamInfo.Encodings.match(/^https:.*\.m3u8$/m)[0])).status !== 200) {
+                        if (streamInfo != null && streamInfo.Encodings != null && (await realFetch(streamInfo.Encodings.match(/^https:.*\.m3u8$/m)?.[0])).status !== 200) {
                             // The cached encodings are dead (the stream probably restarted)
                             streamInfo = null;
                         }

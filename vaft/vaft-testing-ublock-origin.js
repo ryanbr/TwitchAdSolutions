@@ -263,7 +263,7 @@ twitch-videoad.js text/javascript
                 } else if (url.includes('/channel/hls/') && !url.includes('picture-by-picture')) {
                     V2API = url.includes('/api/v2/');
                     const parsedUrl = new URL(url);
-                    const channelName = parsedUrl.pathname.match(/([^\/]+)(?=\.\w+$)/)[0];
+                    const channelName = parsedUrl.pathname.match(/([^\/]+)(?=\.\w+$)/)?.[0];
                     if (ForceAccessTokenPlayerType) {
                         // parent_domains is used to determine if the player is embeded and stripping it gets rid of fake ads
                         parsedUrl.searchParams.delete('parent_domains');
@@ -275,7 +275,7 @@ twitch-videoad.js text/javascript
                                 const encodingsM3u8 = await response.text();
                                 const serverTime = getServerTimeFromM3u8(encodingsM3u8);
                                 let streamInfo = StreamInfos[channelName];
-                                if (streamInfo != null && streamInfo.EncodingsM3U8 != null && (await realFetch(streamInfo.EncodingsM3U8.match(/^https:.*\.m3u8$/m)[0])).status !== 200) {
+                                if (streamInfo != null && streamInfo.EncodingsM3U8 != null && (await realFetch(streamInfo.EncodingsM3U8.match(/^https:.*\.m3u8$/m)?.[0])).status !== 200) {
                                     // The cached encodings are dead (the stream probably restarted)
                                     streamInfo = null;
                                 }
