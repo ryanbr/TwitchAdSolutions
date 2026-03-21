@@ -122,6 +122,7 @@ twitch-videoad.js text/javascript
                     super(twitchBlobUrl, options);
                     return;
                 }
+                console.log('[AD DEBUG] Worker intercepted — injecting ad-block hooks');
                 const newBlobStr = `
                     const pendingFetchRequests = new Map();
                     ${stripAdSegments.toString()}
@@ -276,6 +277,7 @@ twitch-videoad.js text/javascript
                                     streamInfo = null;
                                 }
                                 if (streamInfo == null || streamInfo.EncodingsM3U8 == null) {
+                                    console.log('[AD DEBUG] New stream session — channel: ' + channelName + ', API: ' + (V2API ? 'v2' : 'v1'));
                                     StreamInfos[channelName] = streamInfo = {
                                         ChannelName: channelName,
                                         IsShowingAd: false,
@@ -310,6 +312,9 @@ twitch-videoad.js text/javascript
                                             }
                                             StreamInfosByUrl[lines[i + 1]] = streamInfo;
                                         }
+                                    }
+                                    if (streamInfo.ResolutionList.length === 0) {
+                                        console.log('[AD DEBUG] No resolutions parsed from encodings m3u8 — Twitch may have changed the format');
                                     }
                                     const nonHevcResolutionList = streamInfo.ResolutionList.filter((element) => element.Codecs.startsWith('avc') || element.Codecs.startsWith('av0'));
                                     if (AlwaysReloadPlayerOnAd || (nonHevcResolutionList.length > 0 && streamInfo.ResolutionList.some((element) => element.Codecs.startsWith('hev') || element.Codecs.startsWith('hvc')) && !SkipPlayerReloadOnHevc)) {
@@ -519,6 +524,10 @@ twitch-videoad.js text/javascript
                             const accessTokenResponse = await getAccessToken(streamInfo.ChannelName, realPlayerType);
                             if (accessTokenResponse.status === 200) {
                                 const accessToken = await accessTokenResponse.json();
+                                if (!accessToken?.data?.streamPlaybackAccessToken) {
+                                    console.log('[AD DEBUG] GQL response format changed — missing data.streamPlaybackAccessToken for ' + realPlayerType + '. Response keys: ' + JSON.stringify(Object.keys(accessToken?.data || accessToken || {})));
+                                    continue;
+                                }
                                 const urlInfo = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + streamInfo.ChannelName + '.m3u8' + streamInfo.UsherParams);
                                 urlInfo.searchParams.set('sig', accessToken.data.streamPlaybackAccessToken.signature);
                                 urlInfo.searchParams.set('token', accessToken.data.streamPlaybackAccessToken.value);
@@ -526,6 +535,8 @@ twitch-videoad.js text/javascript
                                 if (encodingsM3u8Response.status === 200) {
                                     encodingsM3u8 = streamInfo.BackupEncodingsM3U8Cache[playerType] = await encodingsM3u8Response.text();
                                 }
+                            } else {
+                                console.log('[AD DEBUG] Access token HTTP ' + accessTokenResponse.status + ' for ' + realPlayerType);
                             }
                         } catch (err) {
                             console.log('[AD DEBUG] Access token failed for ' + realPlayerType + ': ' + err.message);
@@ -842,6 +853,7 @@ twitch-videoad.js text/javascript
         }
         const reactRootNode = findReactRootNode();
         if (!reactRootNode) {
+            console.log('[AD DEBUG] React root node not found — Twitch may have changed their React setup');
             return null;
         }
         let player = findReactNode(reactRootNode, node => node.setPlayerActive && node.props && node.props.mediaPlayerInstance);
@@ -850,6 +862,12 @@ twitch-videoad.js text/javascript
             player = player.playerInstance;
         }
         const playerState = findReactNode(reactRootNode, node => node.setSrc && node.setInitialPlaybackSettings);
+        if (!player) {
+            console.log('[AD DEBUG] Player not found — Twitch may have renamed setPlayerActive/mediaPlayerInstance');
+        }
+        if (!playerState) {
+            console.log('[AD DEBUG] Player state not found — Twitch may have renamed setSrc/setInitialPlaybackSettings');
+        }
         return  {
             player: player,
             state: playerState
@@ -952,6 +970,7 @@ twitch-videoad.js text/javascript
     }
     // Hook fetch() in the window scope to capture auth headers and modify player type requests
     function hookFetch() {
+        console.log('[AD DEBUG] Window fetch hook installed');
         const realFetch = window.fetch;
         window.realFetch = realFetch;
         window.fetch = function(url, init, ...args) {
