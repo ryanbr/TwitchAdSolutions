@@ -919,7 +919,9 @@
             console.log('Could not find player state');
             return;
         }
-        if (player.isPaused() || player.core?.paused) {
+        const wasPaused = player.isPaused() || player.core?.paused;
+        // Only block pause/play toggle if already paused — still allow reloads
+        if (isPausePlay && wasPaused) {
             return;
         }
         playerBufferState.lastFixTime = Date.now();
@@ -951,7 +953,18 @@
             console.log('Reloading Twitch player');
             playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
             postTwitchWorkerMessage('TriggeredPlayerReload');
-            player.play();
+            // Resume playback with retry — only if user hadn't manually paused
+            if (!wasPaused) {
+                player.play();
+                // Retry resume if play() didn't take effect
+                setTimeout(() => {
+                    try {
+                        if (player.isPaused() && !player.core?.paused) {
+                            player.play();
+                        }
+                    } catch {}
+                }, 1500);
+            }
             if (localStorageHookFailed && (currentQualityLS || currentMutedLS || currentVolumeLS)) {
                 setTimeout(() => {
                     try {
