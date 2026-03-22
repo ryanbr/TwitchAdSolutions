@@ -327,6 +327,7 @@ twitch-videoad.js text/javascript
     function stripAdSegments(textStr, stripAllSegments, streamInfo) {
         let hasStrippedAdSegments = false;
         let inCueOut = false;
+        const liveSegments = [];
         const lines = textStr.replaceAll('\r', '').split('\n');
         const newAdUrl = 'https://twitch.tv';
         for (let i = 0; i < lines.length; i++) {
@@ -348,6 +349,8 @@ twitch-videoad.js text/javascript
                 }
                 AdSegmentCache.set(segmentUrl, Date.now());
                 hasStrippedAdSegments = true;
+            } else if (i < lines.length - 1 && line.startsWith('#EXTINF') && line.includes(',live')) {
+                liveSegments.push({ extinf: line, url: lines[i + 1] });
             }
             if (AD_SIGNIFIERS.some((s) => line.includes(s))) {
                 hasStrippedAdSegments = true;
@@ -362,6 +365,18 @@ twitch-videoad.js text/javascript
             }
         } else {
             streamInfo.NumStrippedAdSegments = 0;
+        }
+        // Cache live segments for recovery
+        if (liveSegments.length > 0) {
+            streamInfo.RecoverySegments = liveSegments.slice(-6);
+        }
+        // If all segments were stripped, restore cached recovery segments to prevent black screen
+        if (hasStrippedAdSegments && liveSegments.length === 0 && streamInfo.RecoverySegments && streamInfo.RecoverySegments.length > 0) {
+            console.log('[AD DEBUG] All segments stripped — restoring ' + streamInfo.RecoverySegments.length + ' recovery segments');
+            for (let j = 0; j < streamInfo.RecoverySegments.length; j++) {
+                lines.push(streamInfo.RecoverySegments[j].extinf);
+                lines.push(streamInfo.RecoverySegments[j].url);
+            }
         }
         streamInfo.IsStrippingAdSegments = hasStrippedAdSegments;
         AdSegmentCache.forEach((value, key, map) => {
@@ -489,6 +504,7 @@ twitch-videoad.js text/javascript
                                 IsMidroll: false,
                                 IsStrippingAdSegments: false,
                                 NumStrippedAdSegments: 0,
+                                RecoverySegments: [],
                                 UseFallbackStream: false,
                                 ChannelName: channelName,
                                 UsherParams: (new URL(url)).search,
