@@ -28,6 +28,7 @@ twitch-videoad.js text/javascript
         scope.IsAdStrippingEnabled = true;
         scope.AdSegmentCache = new Map();
         scope.AllSegmentsAreAdSegments = false;
+        scope.ResumeAfterAd = false;// If true, use pause/play instead of full reload after ads (faster but less reliable)
     }
     let twitchPlayerAndState = null;
     let localStorageHookFailed = false;
@@ -316,7 +317,7 @@ twitch-videoad.js text/javascript
         }
         console.log('Found ads, switch to backup' + backupPlayerTypeInfo);
         if (reloadPlayer) {
-            postMessage({key:'UboReloadPlayer'});
+            postMessage({key: ResumeAfterAd ? 'UboPauseResumePlayer' : 'UboReloadPlayer'});
         }
         updateAdblockBannerForStream(streamInfo);
         return result;
@@ -388,12 +389,12 @@ twitch-videoad.js text/javascript
                 const streamM3u8 = await streamM3u8Response.text();
                 if (streamM3u8 != null) {
                     if (!hasAdTags(streamM3u8) && SimulatedAdsDepth == 0) {
-                        console.log('No more ads on main stream. Triggering player reload to go back to main stream...');
+                        console.log('No more ads on main stream. ' + (ResumeAfterAd ? 'Resuming playback...' : 'Triggering player reload to go back to main stream...'));
                         streamInfo.IsMovingOffBackupEncodings = true;
                         streamInfo.BackupEncodings = null;
                         streamInfo.BackupEncodingsStatus.clear();
                         streamInfo.BackupEncodingsPlayerTypeIndex = -1;
-                        postMessage({key:'UboReloadPlayer'});
+                        postMessage({key: ResumeAfterAd ? 'UboPauseResumePlayer' : 'UboReloadPlayer'});
                     } else if (!streamM3u8.includes('"MIDROLL"') && !streamM3u8.includes('"midroll"')) {
                         const lines = streamM3u8.replaceAll('\r', '').split('\n');
                         for (let i = 0; i < lines.length; i++) {
