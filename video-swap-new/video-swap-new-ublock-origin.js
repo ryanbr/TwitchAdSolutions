@@ -965,10 +965,12 @@ twitch-videoad.js text/javascript
         const lsReloadAfterAd = localStorage.getItem('twitchAdSolutions_reloadPlayerAfterAd');
         if (lsReloadAfterAd !== null) {
             ReloadPlayerAfterAd = lsReloadAfterAd === 'true';
+            console.log('[AD DEBUG] Custom config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd);
         }
         const lsPlayerType = localStorage.getItem('twitchAdSolutions_playerType');
         if (lsPlayerType !== null) {
             OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE = lsPlayerType;
+            console.log('[AD DEBUG] Custom config: ForceAccessTokenPlayerType = ' + OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE);
         }
     } catch {}
     hookWindowWorker();

@@ -521,6 +521,7 @@
         const lsPlayerType = localStorage.getItem('twitchAdSolutions_playerType');
         if (lsPlayerType !== null) {
             ForceAccessTokenPlayerType = lsPlayerType;
+            console.log('[AD DEBUG] Custom config: ForceAccessTokenPlayerType = ' + ForceAccessTokenPlayerType);
         }
     } catch {}
     hookWindowWorker();
