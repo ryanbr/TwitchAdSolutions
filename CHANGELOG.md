@@ -33,7 +33,7 @@
 - Add vaft testing scripts with player error auto-recovery (#2000/#3000/#4000)
 
 ### Other
-- Add ResumeAfterAd/ReloadPlayerAfterAd config option with localStorage toggle
+- Add ReloadPlayerAfterAd config option with localStorage toggle
 - Update userscript URLs and author fields to ryanbr repo
 - Clear old worker references when creating new Twitch worker
 - Clear RequestedAds set when ads finish
