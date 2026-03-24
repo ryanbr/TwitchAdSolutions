@@ -331,7 +331,8 @@ twitch-videoad.js text/javascript
                                         HasCheckedUnknownTags: false,
                                         HasLoggedAdAttributes: false,
                                         LoggedBackupAdsByType: null,
-                                        RecoveryStartSeq: undefined
+                                        RecoveryStartSeq: undefined,
+                                        CleanPlaylistCount: 0
                                     };
                                     const lines = encodingsM3u8.split(/\r?\n/);
                                     for (let i = 0; i < lines.length - 1; i++) {
@@ -569,6 +570,7 @@ twitch-videoad.js text/javascript
         }
         const haveAdTags = hasAdTags(textStr) || SimulatedAdsDepth > 0;
         if (haveAdTags) {
+            streamInfo.CleanPlaylistCount = 0;
             streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
             if (!streamInfo.IsShowingAd) {
                 streamInfo.IsShowingAd = true;
@@ -734,45 +736,48 @@ twitch-videoad.js text/javascript
                 console.log('[AD DEBUG] Ad stripping disabled and no backup — ads WILL show');
             }
         } else if (streamInfo.IsShowingAd) {
-            console.log('Finished blocking ads — stripped ' + streamInfo.NumStrippedAdSegments + ' ad segments');
-            const hadStrippedSegments = streamInfo.NumStrippedAdSegments > 0;
-            streamInfo.IsShowingAd = false;
-            streamInfo.IsStrippingAdSegments = false;
-            streamInfo.NumStrippedAdSegments = 0;
-            streamInfo.ActiveBackupPlayerType = null;
-            streamInfo.RequestedAds.clear();
-            streamInfo.FailedBackupPlayerTypes.clear();
-            if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
-            // CSAI-only ad break: no segments were stripped — skip reload entirely.
-            if (!hadStrippedSegments) {
-                console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without reload');
-                streamInfo.IsUsingModifiedM3U8 = false;
-                postMessage({ key: 'PauseResumePlayer' });
-            } else {
-            // Auto-escalate cooldown: if 3+ reloads in last 5 min, triple the cooldown
-            if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
-            streamInfo.ReloadTimestamps = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000);
-            const recentReloads = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000).length;
-            const effectiveCooldown = recentReloads >= 3 ? ReloadCooldownSeconds * 3 : ReloadCooldownSeconds;
-            const tooSoonSinceLastReload = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < (effectiveCooldown * 1000);
-            // Reload if backup was used AND segments were stripped. Otherwise, respect ReloadPlayerAfterAd + cooldown.
-            const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && (hadStrippedSegments || !tooSoonSinceLastReload));
-            if (shouldReload) {
-                streamInfo.ReloadTimestamps.push(Date.now());// Only track actual reloads, not skipped ones
-                streamInfo.IsUsingModifiedM3U8 = false;
-                streamInfo.LastPlayerReload = Date.now();
-                postMessage({
-                    key: 'ReloadPlayer'
-                });
-            } else {
-                if (tooSoonSinceLastReload) {
-                    console.log('[AD DEBUG] Skipping reload — last reload was ' + ((Date.now() - streamInfo.LastPlayerReload) / 1000).toFixed(0) + 's ago (cooldown: ' + effectiveCooldown + 's' + (recentReloads >= 3 ? ', auto-escalated from ' + recentReloads + ' reloads in 5min' : '') + ')');
+            streamInfo.CleanPlaylistCount++;
+            if (streamInfo.CleanPlaylistCount >= 3) {
+                console.log('Finished blocking ads — stripped ' + streamInfo.NumStrippedAdSegments + ' ad segments');
+                const hadStrippedSegments = streamInfo.NumStrippedAdSegments > 0;
+                streamInfo.IsShowingAd = false;
+                streamInfo.IsStrippingAdSegments = false;
+                streamInfo.NumStrippedAdSegments = 0;
+                streamInfo.ActiveBackupPlayerType = null;
+                streamInfo.RequestedAds.clear();
+                streamInfo.FailedBackupPlayerTypes.clear();
+                if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
+                streamInfo.CleanPlaylistCount = 0;
+                // CSAI-only ad break: no segments were stripped — skip reload entirely.
+                if (!hadStrippedSegments) {
+                    console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without reload');
+                    streamInfo.IsUsingModifiedM3U8 = false;
+                    postMessage({ key: 'PauseResumePlayer' });
+                } else {
+                // Auto-escalate cooldown: if 3+ reloads in last 5 min, triple the cooldown
+                if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
+                streamInfo.ReloadTimestamps = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000);
+                const recentReloads = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000).length;
+                const effectiveCooldown = recentReloads >= 3 ? ReloadCooldownSeconds * 3 : ReloadCooldownSeconds;
+                const tooSoonSinceLastReload = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < (effectiveCooldown * 1000);
+                const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && (hadStrippedSegments || !tooSoonSinceLastReload));
+                if (shouldReload) {
+                    streamInfo.ReloadTimestamps.push(Date.now());
+                    streamInfo.IsUsingModifiedM3U8 = false;
+                    streamInfo.LastPlayerReload = Date.now();
+                    postMessage({
+                        key: 'ReloadPlayer'
+                    });
+                } else {
+                    if (tooSoonSinceLastReload) {
+                        console.log('[AD DEBUG] Skipping reload — last reload was ' + ((Date.now() - streamInfo.LastPlayerReload) / 1000).toFixed(0) + 's ago (cooldown: ' + effectiveCooldown + 's' + (recentReloads >= 3 ? ', auto-escalated from ' + recentReloads + ' reloads in 5min' : '') + ')');
+                    }
+                    postMessage({
+                        key: 'PauseResumePlayer'
+                    });
                 }
-                postMessage({
-                    key: 'PauseResumePlayer'
-                });
+                }// end else (non-CSAI path)
             }
-            }// end else (non-CSAI path)
         }
         postMessage({
             key: 'UpdateAdBlockBanner',
