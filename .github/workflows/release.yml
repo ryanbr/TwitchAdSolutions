@@ -44,6 +44,13 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+    - name: Create version commit and tag
+      run: |
+        git commit --allow-empty -m "v${{ steps.version.outputs.version }}"
+        git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
+        git push origin master
+        git push origin "v${{ steps.version.outputs.version }}"
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
