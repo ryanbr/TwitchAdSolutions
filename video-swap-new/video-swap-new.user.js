@@ -874,6 +874,10 @@
                     if (currentVolumeLS) {
                         localStorage.setItem(lsKeyVolume, currentVolumeLS);
                     }
+                    const videos = document.getElementsByTagName('video');
+                    if (videos.length > 0 && videos[0].muted) {
+                        videos[0].muted = false;
+                    }
                 } catch {}
             }, 3000);
         }
