@@ -626,7 +626,7 @@ twitch-videoad.js text/javascript
             }
         } else if (streamInfo.IsShowingAd) {
             streamInfo.CleanPlaylistCount++;
-            if (streamInfo.CleanPlaylistCount >= 3) {
+            if (streamInfo.CleanPlaylistCount >= 2) {
                 console.log('Finished blocking ads — stripped ' + streamInfo.NumStrippedAdSegments + ' ad segments');
                 streamInfo.IsShowingAd = false;
                 streamInfo.IsStrippingAdSegments = false;
