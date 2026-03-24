@@ -392,7 +392,12 @@ twitch-videoad.js text/javascript
                 if (streamM3u8 != null) {
                     if (!hasAdTags(streamM3u8) && SimulatedAdsDepth == 0) {
                         streamInfo.CleanPlaylistCount++;
-                        if (streamInfo.CleanPlaylistCount >= 2) {
+                        // Check if the current playlist has live segments — if not, backup stream is dead
+                        const hasLiveSegments = textStr.includes(LIVE_SIGNIFIER);
+                        if (streamInfo.CleanPlaylistCount >= 2 || !hasLiveSegments) {
+                            if (!hasLiveSegments) {
+                                console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
+                            }
                             console.log('No more ads on main stream. ' + (ReloadPlayerAfterAd ? 'Triggering player reload to go back to main stream...' : 'Resuming playback...'));
                             streamInfo.IsMovingOffBackupEncodings = true;
                             streamInfo.BackupEncodings = null;

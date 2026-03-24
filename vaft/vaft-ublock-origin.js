@@ -626,7 +626,12 @@ twitch-videoad.js text/javascript
             }
         } else if (streamInfo.IsShowingAd) {
             streamInfo.CleanPlaylistCount++;
-            if (streamInfo.CleanPlaylistCount >= 2) {
+            // Check if the current playlist has live segments — if not, backup stream is dead
+            const hasLiveSegments = textStr.includes(',live');
+            if (streamInfo.CleanPlaylistCount >= 2 || !hasLiveSegments) {
+                if (!hasLiveSegments) {
+                    console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
+                }
                 console.log('Finished blocking ads — stripped ' + streamInfo.NumStrippedAdSegments + ' ad segments');
                 streamInfo.IsShowingAd = false;
                 streamInfo.IsStrippingAdSegments = false;
