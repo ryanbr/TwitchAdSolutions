@@ -407,7 +407,7 @@ twitch-videoad.js text/javascript
                 if (streamM3u8 != null) {
                     if (!hasAdTags(streamM3u8) && SimulatedAdsDepth == 0) {
                         streamInfo.CleanPlaylistCount++;
-                        if (streamInfo.CleanPlaylistCount >= 3) {
+                        if (streamInfo.CleanPlaylistCount >= 2) {
                             console.log('No more ads on main stream. ' + (ReloadPlayerAfterAd ? 'Triggering player reload to go back to main stream...' : 'Resuming playback...'));
                             streamInfo.IsMovingOffBackupEncodings = true;
                             streamInfo.BackupEncodings = null;
