@@ -37,6 +37,7 @@
         scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers)
         scope.AlwaysReloadPlayerOnAd = false;// Always pause/play when entering/leaving ads
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
+        scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
         scope.HasTriggeredPlayerReload = false;
@@ -158,6 +159,7 @@
                     const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
                     declareOptions(self);
                     ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};
+                    PinBackupPlayerType = ${PinBackupPlayerType};
                     ForceAccessTokenPlayerType = '${ForceAccessTokenPlayerType}';
                     GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
                     AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
@@ -544,7 +546,7 @@
             }
             // Try pinned backup player type first if available
             const playerTypesToTry = [...BackupPlayerTypes];
-            if (streamInfo.PinnedBackupPlayerType) {
+            if (PinBackupPlayerType && streamInfo.PinnedBackupPlayerType) {
                 const pinnedIndex = playerTypesToTry.indexOf(streamInfo.PinnedBackupPlayerType);
                 if (pinnedIndex > 0) {
                     playerTypesToTry.splice(pinnedIndex, 1);
@@ -631,7 +633,9 @@
                 textStr = backupM3u8;
                 if (streamInfo.ActiveBackupPlayerType != backupPlayerType) {
                     streamInfo.ActiveBackupPlayerType = backupPlayerType;
-                    streamInfo.PinnedBackupPlayerType = backupPlayerType;
+                    if (PinBackupPlayerType) {
+                        streamInfo.PinnedBackupPlayerType = backupPlayerType;
+                    }
                     console.log(`Blocking${(streamInfo.IsMidroll ? ' midroll ' : ' ')}ads (${backupPlayerType})`);
                 }
             } else {
@@ -1165,8 +1169,12 @@
         if (lsPlayerType !== null) {
             ForceAccessTokenPlayerType = lsPlayerType;
         }
+        const lsPinBackup = localStorage.getItem('twitchAdSolutions_pinBackupPlayerType');
+        if (lsPinBackup !== null) {
+            PinBackupPlayerType = lsPinBackup === 'true';
+        }
     } catch {}
-    console.log('[AD DEBUG] Config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd + ', ForceAccessTokenPlayerType = ' + ForceAccessTokenPlayerType);
+    console.log('[AD DEBUG] Config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd + ', ForceAccessTokenPlayerType = ' + ForceAccessTokenPlayerType + ', PinBackupPlayerType = ' + PinBackupPlayerType);
     hookWindowWorker();
     hookFetch();
     if (PlayerBufferingFix) {
