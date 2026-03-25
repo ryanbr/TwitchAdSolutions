@@ -29,6 +29,7 @@ twitch-videoad.js text/javascript
         scope.AdSegmentCache = new Map();
         scope.AllSegmentsAreAdSegments = false;
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
+        scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
     }
     let twitchPlayerAndState = null;
     let localStorageHookFailed = false;
@@ -122,6 +123,7 @@ twitch-videoad.js text/javascript
                     const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
                     declareOptions(self);
                     ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};
+                    PinBackupPlayerType = ${PinBackupPlayerType};
                     OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE = '${OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE}';
                     gql_device_id = ${gql_device_id ? "'" + gql_device_id + "'" : null};
                     AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
@@ -243,7 +245,15 @@ twitch-videoad.js text/javascript
     async function onFoundAd(streamInfo, textStr, reloadPlayer, realFetch, url, resolutionInfo) {
         let result = textStr;
         streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
-        const playerTypes = OPT_BACKUP_PLAYER_TYPES;
+        const playerTypes = [...OPT_BACKUP_PLAYER_TYPES];
+        // Try pinned backup player type first if available
+        if (PinBackupPlayerType && streamInfo.PinnedBackupPlayerType) {
+            const pinnedIndex = playerTypes.indexOf(streamInfo.PinnedBackupPlayerType);
+            if (pinnedIndex > 0) {
+                playerTypes.splice(pinnedIndex, 1);
+                playerTypes.unshift(streamInfo.PinnedBackupPlayerType);
+            }
+        }
         if (streamInfo.BackupEncodingsStatus.size >= playerTypes.length) {
             return textStr;
         }
@@ -277,6 +287,9 @@ twitch-videoad.js text/javascript
                                     backupPlayerTypeInfo = ' (' + playerType + ')';
                                     streamInfo.BackupEncodingsStatus.set(playerType, 1);
                                     streamInfo.BackupEncodingsPlayerTypeIndex = i;
+                                    if (PinBackupPlayerType) {
+                                        streamInfo.PinnedBackupPlayerType = playerType;
+                                    }
                                     if (streamInfo.Encodings != null) {
                                         // Low resolution streams will reduce the number of resolutions in the UI. To fix this we merge the low res URLs into the main m3u8
                                         const normalEncodingsM3u8 = streamInfo.Encodings;
@@ -488,6 +501,7 @@ twitch-videoad.js text/javascript
                                 BackupEncodings: null,
                                 BackupEncodingsStatus: new Map(),
                                 BackupEncodingsPlayerTypeIndex: -1,
+                                PinnedBackupPlayerType: null,
                                 IsMovingOffBackupEncodings: false,
                                 IsMidroll: false,
                                 IsStrippingAdSegments: false,
@@ -970,8 +984,12 @@ twitch-videoad.js text/javascript
         if (lsPlayerType !== null) {
             OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE = lsPlayerType;
         }
+        const lsPinBackup = localStorage.getItem('twitchAdSolutions_pinBackupPlayerType');
+        if (lsPinBackup !== null) {
+            PinBackupPlayerType = lsPinBackup === 'true';
+        }
     } catch {}
-    console.log('[AD DEBUG] Config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd + ', ForceAccessTokenPlayerType = ' + OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE);
+    console.log('[AD DEBUG] Config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd + ', ForceAccessTokenPlayerType = ' + OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE + ', PinBackupPlayerType = ' + PinBackupPlayerType);
     hookWindowWorker();
     hookFetch();
     monitorLiveStatus();
