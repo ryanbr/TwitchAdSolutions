@@ -367,6 +367,7 @@ twitch-videoad.js text/javascript
                 AdSegmentCache.set(segmentUrl, Date.now());
                 hasStrippedAdSegments = true;
             } else if (i < lines.length - 1 && line.startsWith('#EXTINF') && AD_SEGMENT_URL_PATTERNS.some((p) => lines[i + 1].includes(p))) {
+                console.log('[AD DEBUG] Ad segment detected via URL pattern: ' + lines[i + 1]);
                 AdSegmentCache.set(lines[i + 1], Date.now());
                 hasStrippedAdSegments = true;
                 streamInfo.NumStrippedAdSegments++;
