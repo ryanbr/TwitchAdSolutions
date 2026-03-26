@@ -1,4 +1,17 @@
-## Changes since pixeltris (upstream)
+## Unreleased
+
+### Ad Detection
+- Add SCTE35-OUT signifier for alternative SCTE-35 marker detection
+- Add ad segment URL pattern detection (/adsquared/, /_404/, /processing)
+
+### Debug Logging
+- Log ad segments detected via URL pattern matching
+- Log localStorage config values on script load
+
+### Other
+- Add PinBackupPlayerType config option with localStorage toggle
+
+## v42.0.0
 
 ### Ad Detection
 - Add SCTE-35 ad signifier detection and CUE-OUT/CUE-IN tracking
