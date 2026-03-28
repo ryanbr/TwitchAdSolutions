@@ -970,7 +970,8 @@
             playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
             postTwitchWorkerMessage('TriggeredPlayerReload');
             player.play();
-            if (localStorageHookFailed && (currentQualityLS || currentMutedLS || currentVolumeLS)) {
+            // Always restore muted/volume state after reload — Chrome autoplay policy can force muted
+            if (currentQualityLS || currentMutedLS || currentVolumeLS) {
                 setTimeout(() => {
                     try {
                         if (currentQualityLS) {
@@ -1113,7 +1114,7 @@
                         //console.log('Tab focused. Stream should be active');
                         playerBufferState.hasStreamStarted = true;
                     }
-                    if (wasVideoPlaying && !videos[0].ended && videos[0].paused && videos[0].muted) {
+                    if (wasVideoPlaying && !videos[0].ended && videos[0].paused) {
                         videos[0].play();
                     }
                 }

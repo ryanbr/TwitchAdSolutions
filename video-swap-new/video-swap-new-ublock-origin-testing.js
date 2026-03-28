@@ -1,18 +1,6 @@
-// ==UserScript==
-// @name         TwitchAdSolutions (video-swap-new)
-// @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      1.58
-// @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
-// @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
-// @description  Multiple solutions for blocking Twitch ads (video-swap-new)
-// @author       pixeltris (original), ryanbr (fork)
-// @match        *://*.twitch.tv/*
-// @run-at       document-start
-// @inject-into  page
-// @grant        none
-// ==/UserScript==
+twitch-videoad.js text/javascript
 (function() {
-    'use strict';
+    if ( /(^|\.)twitch\.tv$/.test(document.location.hostname) === false ) { return; }
     const ourTwitchAdSolutionsVersion = 27;// Used to prevent conflicts with outdated versions of the scripts
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log("skipping video-swap-new as there's another script active. ourVersion:" + ourTwitchAdSolutionsVersion + " activeVersion:" + window.twitchAdSolutionsVersion);
@@ -42,6 +30,7 @@
         scope.AdSegmentCache = new Map();
         scope.AllSegmentsAreAdSegments = false;
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
+        scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
     }
     let twitchPlayerAndState = null;
     let localStorageHookFailed = false;
@@ -135,6 +124,7 @@
                     const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
                     declareOptions(self);
                     ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};
+                    PinBackupPlayerType = ${PinBackupPlayerType};
                     OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE = '${OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE}';
                     gql_device_id = ${gql_device_id ? "'" + gql_device_id + "'" : null};
                     AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
@@ -256,7 +246,15 @@
     async function onFoundAd(streamInfo, textStr, reloadPlayer, realFetch, url, resolutionInfo) {
         let result = textStr;
         streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
-        const playerTypes = OPT_BACKUP_PLAYER_TYPES;
+        const playerTypes = [...OPT_BACKUP_PLAYER_TYPES];
+        // Try pinned backup player type first if available
+        if (PinBackupPlayerType && streamInfo.PinnedBackupPlayerType) {
+            const pinnedIndex = playerTypes.indexOf(streamInfo.PinnedBackupPlayerType);
+            if (pinnedIndex > 0) {
+                playerTypes.splice(pinnedIndex, 1);
+                playerTypes.unshift(streamInfo.PinnedBackupPlayerType);
+            }
+        }
         if (streamInfo.BackupEncodingsStatus.size >= playerTypes.length) {
             return textStr;
         }
@@ -290,6 +288,9 @@
                                     backupPlayerTypeInfo = ' (' + playerType + ')';
                                     streamInfo.BackupEncodingsStatus.set(playerType, 1);
                                     streamInfo.BackupEncodingsPlayerTypeIndex = i;
+                                    if (PinBackupPlayerType) {
+                                        streamInfo.PinnedBackupPlayerType = playerType;
+                                    }
                                     if (streamInfo.Encodings != null) {
                                         // Low resolution streams will reduce the number of resolutions in the UI. To fix this we merge the low res URLs into the main m3u8
                                         const normalEncodingsM3u8 = streamInfo.Encodings;
@@ -424,23 +425,35 @@
                 const streamM3u8 = await streamM3u8Response.text();
                 if (streamM3u8 != null) {
                     if (!hasAdTags(streamM3u8) && SimulatedAdsDepth == 0) {
-                        console.log('No more ads on main stream. ' + (ReloadPlayerAfterAd ? 'Triggering player reload to go back to main stream...' : 'Resuming playback...'));
-                        streamInfo.IsMovingOffBackupEncodings = true;
-                        streamInfo.BackupEncodings = null;
-                        streamInfo.BackupEncodingsStatus.clear();
-                        streamInfo.BackupEncodingsPlayerTypeIndex = -1;
-                        postMessage({key: ReloadPlayerAfterAd ? 'UboReloadPlayer' : 'UboPauseResumePlayer'});
-                    } else if (!streamM3u8.includes('"MIDROLL"') && !streamM3u8.includes('"midroll"')) {
-                        const lines = streamM3u8.replaceAll('\r', '').split('\n');
-                        for (let i = 0; i < lines.length; i++) {
-                            const line = lines[i];
-                            if (line.startsWith('#EXTINF') && lines.length > i + 1) {
-                                if (!line.includes(LIVE_SIGNIFIER) && !streamInfo.RequestedAds.has(lines[i + 1])) {
-                                    // Only request one .ts file per .m3u8 request to avoid making too many requests
-                                    //console.log('Fetch ad .ts file');
-                                    streamInfo.RequestedAds.add(lines[i + 1]);
-                                    fetch(lines[i + 1]).then((response)=>{response.blob()});
-                                    break;
+                        streamInfo.CleanPlaylistCount++;
+                        // Check if the current playlist has live segments — if not, backup stream is dead
+                        const hasLiveSegments = textStr.includes(LIVE_SIGNIFIER);
+                        if (streamInfo.CleanPlaylistCount >= 2 || !hasLiveSegments) {
+                            if (!hasLiveSegments) {
+                                console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
+                            }
+                            console.log('No more ads on main stream. ' + (ReloadPlayerAfterAd ? 'Triggering player reload to go back to main stream...' : 'Resuming playback...'));
+                            streamInfo.IsMovingOffBackupEncodings = true;
+                            streamInfo.BackupEncodings = null;
+                            streamInfo.BackupEncodingsStatus.clear();
+                            streamInfo.BackupEncodingsPlayerTypeIndex = -1;
+                            streamInfo.CleanPlaylistCount = 0;
+                            postMessage({key: ReloadPlayerAfterAd ? 'UboReloadPlayer' : 'UboPauseResumePlayer'});
+                        }
+                    } else {
+                        streamInfo.CleanPlaylistCount = 0;
+                        if (!streamM3u8.includes('"MIDROLL"') && !streamM3u8.includes('"midroll"')) {
+                            const lines = streamM3u8.replaceAll('\r', '').split('\n');
+                            for (let i = 0; i < lines.length; i++) {
+                                const line = lines[i];
+                                if (line.startsWith('#EXTINF') && lines.length > i + 1) {
+                                    if (!line.includes(LIVE_SIGNIFIER) && !streamInfo.RequestedAds.has(lines[i + 1])) {
+                                        // Only request one .ts file per .m3u8 request to avoid making too many requests
+                                        //console.log('Fetch ad .ts file');
+                                        streamInfo.RequestedAds.add(lines[i + 1]);
+                                        fetch(lines[i + 1]).then((response)=>{response.blob()});
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -521,11 +534,13 @@
                                 BackupEncodings: null,
                                 BackupEncodingsStatus: new Map(),
                                 BackupEncodingsPlayerTypeIndex: -1,
+                                PinnedBackupPlayerType: null,
                                 IsMovingOffBackupEncodings: false,
                                 IsMidroll: false,
                                 IsStrippingAdSegments: false,
                                 NumStrippedAdSegments: 0,
                                 RecoverySegments: [],
+                                CleanPlaylistCount: 0,
                                 UseFallbackStream: false,
                                 ChannelName: channelName,
                                 UsherParams: (new URL(url)).search,
@@ -855,7 +870,9 @@
             console.log('Could not find player state');
             return;
         }
-        if (player.isPaused() || player.core?.paused) {
+        const wasPaused = player.isPaused() || player.core?.paused;
+        // Only block pause/play toggle if already paused — still allow reloads
+        if (isPausePlay && wasPaused) {
             return;
         }
         if (isPausePlay) {
@@ -882,8 +899,20 @@
             }
         } catch {}
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
-        player.play();
-        if (localStorageHookFailed && (currentQualityLS || currentMutedLS || currentVolumeLS)) {
+        // Resume playback with retry — only if user hadn't manually paused
+        if (!wasPaused) {
+            player.play();
+            // Retry resume if play() didn't take effect
+            setTimeout(() => {
+                try {
+                    if (player.isPaused() && !player.core?.paused) {
+                        player.play();
+                    }
+                } catch {}
+            }, 1500);
+        }
+        // Always restore muted/volume state after reload — Chrome autoplay policy can force muted
+        if (currentQualityLS || currentMutedLS || currentVolumeLS) {
             setTimeout(() => {
                 try {
                     if (currentQualityLS) {
@@ -894,6 +923,10 @@
                     }
                     if (currentVolumeLS) {
                         localStorage.setItem(lsKeyVolume, currentVolumeLS);
+                    }
+                    const videos = document.getElementsByTagName('video');
+                    if (videos.length > 0 && videos[0].muted) {
+                        videos[0].muted = false;
                     }
                 } catch {}
             }, 3000);
@@ -930,7 +963,7 @@
                 if (videos.length > 0) {
                     if (hidden.apply(document) === true || (webkitHidden && webkitHidden.apply(document) === true)) {
                         wasVideoPlaying = !videos[0].paused && !videos[0].ended;
-                    } else if (wasVideoPlaying && !videos[0].ended && videos[0].paused && videos[0].muted) {
+                    } else if (wasVideoPlaying && !videos[0].ended && videos[0].paused) {
                         videos[0].play();
                     }
                 }
@@ -1004,8 +1037,12 @@
         if (lsPlayerType !== null) {
             OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE = lsPlayerType;
         }
+        const lsPinBackup = localStorage.getItem('twitchAdSolutions_pinBackupPlayerType');
+        if (lsPinBackup !== null) {
+            PinBackupPlayerType = lsPinBackup === 'true';
+        }
     } catch {}
-    console.log('[AD DEBUG] Config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd + ', ForceAccessTokenPlayerType = ' + OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE);
+    console.log('[AD DEBUG] Config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd + ', ForceAccessTokenPlayerType = ' + OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE + ', PinBackupPlayerType = ' + PinBackupPlayerType);
     hookWindowWorker();
     hookFetch();
     monitorLiveStatus();

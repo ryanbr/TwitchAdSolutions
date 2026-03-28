@@ -1,0 +1,32 @@
+name: Validate JS
+
+on:
+  push:
+    paths:
+      - "**/*.js"
+  pull_request:
+    paths:
+      - "**/*.js"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install acorn
+      run: npm install -g acorn
+
+    - name: Validate userscripts
+      run: |
+        for f in vaft/vaft.user.js vaft/vaft_testing.user.js video-swap-new/video-swap-new.user.js strip/strip.user.js; do
+          echo "Validating $f..."
+          acorn --ecma2022 "$f" > /dev/null
+        done
+
+    - name: Validate uBlock scripts
+      run: |
+        for f in vaft/vaft-ublock-origin.js vaft/vaft-testing-ublock-origin.js video-swap-new/video-swap-new-ublock-origin.js; do
+          echo "Validating $f..."
+          tail -n +2 "$f" | acorn --ecma2022 > /dev/null
+        done
