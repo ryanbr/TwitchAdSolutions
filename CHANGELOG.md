@@ -4,6 +4,9 @@
 - Add SCTE35-OUT signifier for alternative SCTE-35 marker detection
 - Add ad segment URL pattern detection (/adsquared/, /_404/, /processing)
 
+### Backup Stream
+- Track failed backup player types and skip them during ad breaks
+
 ### Ad Recovery
 - Add segment recovery cache to prevent black screen when all segments are stripped
 

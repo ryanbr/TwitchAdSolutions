@@ -15,7 +15,7 @@ Comparison of ryanbr/TwitchAdSolutions (release & testing) vs GosuDRM/TTV-AB 5.0
 | Feature | Release | Testing | TTV-AB | pixeltris |
 |---|---|---|---|---|
 | Backup player type cycling | Yes | Yes | Yes | Yes |
-| Failed backup type tracking | PR | Yes | Yes | No |
+| Failed backup type tracking | Yes | Yes | Yes | No |
 | Pinned backup type | PR | Yes (opt-in) | Yes (always on) | No |
 | Segment recovery cache | Yes | Yes | Yes | No |
 
