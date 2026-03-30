@@ -883,7 +883,8 @@
         } catch {}
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
         player.play();
-        if (localStorageHookFailed && (currentQualityLS || currentMutedLS || currentVolumeLS)) {
+        // Always restore muted/volume state after reload — Chrome autoplay policy can force muted
+        if (currentQualityLS || currentMutedLS || currentVolumeLS) {
             setTimeout(() => {
                 try {
                     if (currentQualityLS) {
@@ -894,6 +895,10 @@
                     }
                     if (currentVolumeLS) {
                         localStorage.setItem(lsKeyVolume, currentVolumeLS);
+                    }
+                    const videos = document.getElementsByTagName('video');
+                    if (videos.length > 0 && videos[0].muted) {
+                        videos[0].muted = false;
                     }
                 } catch {}
             }, 3000);
