@@ -136,6 +136,7 @@ twitch-videoad.js text/javascript
                 const newBlobStr = `
                     const pendingFetchRequests = new Map();
                     ${hasAdTags.toString()}
+                    ${getMatchedAdSignifiers.toString()}
                     ${stripAdSegments.toString()}
                     ${getStreamUrlForResolution.toString()}
                     ${processM3U8.toString()}
@@ -396,6 +397,9 @@ twitch-videoad.js text/javascript
     function hasAdTags(textStr) {
         return AdSignifiers.some((s) => textStr.includes(s));
     }
+    function getMatchedAdSignifiers(textStr) {
+        return AdSignifiers.filter((s) => textStr.includes(s));
+    }
     // Remove ad segments from an m3u8 playlist and cache their URLs for replacement
     function stripAdSegments(textStr, stripAllSegments, streamInfo) {
         let hasStrippedAdSegments = false;
@@ -513,7 +517,7 @@ twitch-videoad.js text/javascript
             streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
             if (!streamInfo.IsShowingAd) {
                 streamInfo.IsShowingAd = true;
-                console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName);
+                console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
                 postMessage({
                     key: 'UpdateAdBlockBanner',
                     isMidroll: streamInfo.IsMidroll,

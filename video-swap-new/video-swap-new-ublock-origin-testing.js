@@ -107,6 +107,7 @@ twitch-videoad.js text/javascript
                 const newBlobStr = `
                     const pendingFetchRequests = new Map();
                     ${hasAdTags.toString()}
+                    ${getMatchedAdSignifiers.toString()}
                     ${stripAdSegments.toString()}
                     ${processM3U8.toString()}
                     ${hookWorkerFetch.toString()}
@@ -332,7 +333,7 @@ twitch-videoad.js text/javascript
                 }
             }
         }
-        console.log('Found ads, switch to backup' + backupPlayerTypeInfo);
+        console.log('Found ads, switch to backup' + backupPlayerTypeInfo + ' — signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
         if (reloadPlayer) {
             postMessage({key: ReloadPlayerAfterAd ? 'UboReloadPlayer' : 'UboPauseResumePlayer'});
         }
@@ -341,6 +342,9 @@ twitch-videoad.js text/javascript
     }
     function hasAdTags(textStr) {
         return AD_SIGNIFIERS.some((s) => textStr.includes(s));
+    }
+    function getMatchedAdSignifiers(textStr) {
+        return AD_SIGNIFIERS.filter((s) => textStr.includes(s));
     }
     function stripAdSegments(textStr, stripAllSegments, streamInfo) {
         let hasStrippedAdSegments = false;
