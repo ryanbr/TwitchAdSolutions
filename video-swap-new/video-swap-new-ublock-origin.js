@@ -238,7 +238,8 @@ twitch-videoad.js text/javascript
             isMidroll: streamInfo.IsMidroll,
             hasAds: isShowingAd,
             isStrippingAdSegments: streamInfo.IsStrippingAdSegments,
-            numStrippedAdSegments: streamInfo.NumStrippedAdSegments
+            numStrippedAdSegments: streamInfo.NumStrippedAdSegments,
+            activeBackupPlayerType: streamInfo.BackupEncodingsPlayerTypeIndex >= 0 ? OPT_BACKUP_PLAYER_TYPES[streamInfo.BackupEncodingsPlayerTypeIndex] : null
         });
     }
     async function onFoundAd(streamInfo, textStr, reloadPlayer, realFetch, url, resolutionInfo) {
@@ -766,7 +767,7 @@ twitch-videoad.js text/javascript
                     twitchPlayerAndState = getPlayerAndState();
                 }
                 const isLive = twitchPlayerAndState?.state?.props?.content?.type === 'live';
-                adBlockDiv.P.textContent = 'Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '');// + (data.numStrippedAdSegments > 0 ? ` (${data.numStrippedAdSegments})` : '');
+                adBlockDiv.P.textContent = 'Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '') + (data.activeBackupPlayerType && data.activeBackupPlayerType !== OPT_BACKUP_PLAYER_TYPES[0] ? ' (' + data.activeBackupPlayerType + ')' : '');
                 adBlockDiv.style.display = data.hasAds && isLive ? 'block' : 'none';
             }
         }

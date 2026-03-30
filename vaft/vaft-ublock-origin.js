@@ -675,7 +675,8 @@ twitch-videoad.js text/javascript
             isMidroll: streamInfo.IsMidroll,
             hasAds: streamInfo.IsShowingAd,
             isStrippingAdSegments: streamInfo.IsStrippingAdSegments,
-            numStrippedAdSegments: streamInfo.NumStrippedAdSegments
+            numStrippedAdSegments: streamInfo.NumStrippedAdSegments,
+            activeBackupPlayerType: streamInfo.ActiveBackupPlayerType
         });
         return textStr;
     }
@@ -862,7 +863,7 @@ twitch-videoad.js text/javascript
             }
             if (adBlockDiv != null) {
                 isActivelyStrippingAds = data.isStrippingAdSegments;
-                adBlockDiv.P.textContent = 'Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '');// + (data.numStrippedAdSegments > 0 ? ` (${data.numStrippedAdSegments})` : '');
+                adBlockDiv.P.textContent = 'Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '') + (data.activeBackupPlayerType && data.activeBackupPlayerType !== BackupPlayerTypes[0] ? ' (' + data.activeBackupPlayerType + ')' : '');
                 adBlockDiv.style.display = data.hasAds && playerBufferState.isLive ? 'block' : 'none';
             }
         }
