@@ -355,8 +355,14 @@
             let line = lines[i];
             // Track SCTE-35 CUE-OUT/CUE-IN ad boundaries
             if (line.includes('EXT-X-CUE-OUT')) {
+                if (!inCueOut) {
+                    console.log('[AD DEBUG] SCTE-35 CUE-OUT — ad boundary entered');
+                }
                 inCueOut = true;
             } else if (line.includes('EXT-X-CUE-IN')) {
+                if (inCueOut) {
+                    console.log('[AD DEBUG] SCTE-35 CUE-IN — ad boundary exited');
+                }
                 inCueOut = false;
             }
             // Remove tracking urls which appear in the overlay UI
