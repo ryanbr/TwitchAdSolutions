@@ -257,6 +257,7 @@ twitch-videoad.js text/javascript
                 return await streamM3u8Response.text();
             }
         }
+        const backupSearchStart = Date.now();
         let backupPlayerTypeInfo = '';
         for (let i = 0; i < playerTypes.length; i++) {
             const playerType = playerTypes[i];
@@ -320,7 +321,7 @@ twitch-videoad.js text/javascript
                 }
             }
         }
-        console.log('Found ads, switch to backup' + backupPlayerTypeInfo + ' — signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
+        console.log('Found ads, switch to backup' + backupPlayerTypeInfo + ' in ' + (Date.now() - backupSearchStart) + 'ms — signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
         if (reloadPlayer) {
             postMessage({key: ReloadPlayerAfterAd ? 'UboReloadPlayer' : 'UboPauseResumePlayer'});
         }

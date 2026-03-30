@@ -564,6 +564,7 @@
                     key: 'ReloadPlayer'
                 });
             }
+            const backupSearchStart = Date.now();
             let backupPlayerType = null;
             let backupM3u8 = null;
             let fallbackM3u8 = null;
@@ -659,7 +660,7 @@
                 textStr = backupM3u8;
                 if (streamInfo.ActiveBackupPlayerType != backupPlayerType) {
                     streamInfo.ActiveBackupPlayerType = backupPlayerType;
-                    console.log(`Blocking${(streamInfo.IsMidroll ? ' midroll ' : ' ')}ads (${backupPlayerType})`);
+                    console.log(`Blocking${(streamInfo.IsMidroll ? ' midroll ' : ' ')}ads (${backupPlayerType}) — backup found in ${Date.now() - backupSearchStart}ms`);
                 }
             } else {
                 console.log('[AD DEBUG] No ad-free backup stream found — ads may leak. Tried: ' + BackupPlayerTypes.slice(startIndex).join(', '));
