@@ -1112,7 +1112,6 @@ twitch-videoad.js text/javascript
         };
         let wasVideoPlaying = true;
         const visibilityChange = e => {
-            const isChrome = typeof chrome !== 'undefined';
             const videos = document.getElementsByTagName('video');
             if (videos.length > 0) {
                 if (hidden && hidden.apply(document) === true) {
