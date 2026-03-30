@@ -559,6 +559,7 @@ twitch-videoad.js text/javascript
                     key: 'ReloadPlayer'
                 });
             }
+            const backupSearchStart = Date.now();
             let backupPlayerType = null;
             let backupM3u8 = null;
             let fallbackM3u8 = null;
@@ -666,7 +667,7 @@ twitch-videoad.js text/javascript
                     if (PinBackupPlayerType) {
                         streamInfo.PinnedBackupPlayerType = backupPlayerType;
                     }
-                    console.log(`Blocking${(streamInfo.IsMidroll ? ' midroll ' : ' ')}ads (${backupPlayerType})`);
+                    console.log(`Blocking${(streamInfo.IsMidroll ? ' midroll ' : ' ')}ads (${backupPlayerType}) — backup found in ${Date.now() - backupSearchStart}ms`);
                 }
             } else {
                 console.log('[AD DEBUG] No ad-free backup stream found — ads may leak. Tried: ' + playerTypesToTry.slice(startIndex).join(', '));
