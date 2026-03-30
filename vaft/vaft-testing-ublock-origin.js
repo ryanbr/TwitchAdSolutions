@@ -307,6 +307,7 @@ twitch-videoad.js text/javascript
                                         BackupEncodingsM3U8Cache: [],
                                         ActiveBackupPlayerType: null,
                                         PinnedBackupPlayerType: null,
+                                        HasCheckedUnknownTags: false,
                                         IsMidroll: false,
                                         IsStrippingAdSegments: false,
                                         NumStrippedAdSegments: 0,
@@ -516,6 +517,16 @@ twitch-videoad.js text/javascript
         if (HasTriggeredPlayerReload) {
             HasTriggeredPlayerReload = false;
             streamInfo.LastPlayerReload = Date.now();
+        }
+        if (!streamInfo.HasCheckedUnknownTags) {
+            streamInfo.HasCheckedUnknownTags = true;
+            const unknownAdTags = textStr.match(/#EXT[^:\n]*(?:ad|cue|scte|sponsor)[^:\n]*/gi);
+            if (unknownAdTags) {
+                const unknown = unknownAdTags.filter(t => !AdSignifiers.some(s => t.includes(s)));
+                if (unknown.length > 0) {
+                    console.log('[AD DEBUG] Unknown ad-related tags found: ' + [...new Set(unknown)].join(', '));
+                }
+            }
         }
         const haveAdTags = hasAdTags(textStr) || SimulatedAdsDepth > 0;
         if (haveAdTags) {
