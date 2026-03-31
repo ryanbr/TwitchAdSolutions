@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (strip) - BAD, DON'T USE THIS
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      1.2
+// @version      1.3
 // @description  Multiple solutions for blocking Twitch ads (strip)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/strip/strip.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/strip/strip.user.js
