@@ -81,6 +81,6 @@ body:
     attributes:
       label: Troubleshooting
       options:
-        - label: I have disabled all other Twitch-related extensions (7TV, BTTV, FFZ, TTV-AB, etc.) and the issue still occurs
+        - label: I have disabled ALL other Twitch-related extensions and the issue still occurs (including but not limited to 7TV, BTTV, FFZ, TTV-AB, Purple AdBlock, AdGuard, and any other ad blockers or Twitch enhancers)
         - label: Issue persists after clearing browser cache and restarting
         - label: Issue does NOT occur without the script installed
