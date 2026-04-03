@@ -403,6 +403,57 @@ streamInfo = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false, RecoveryS
 result = stripAdSegments(mixedM3u8, true, streamInfo);
 assert(AdSegmentCache.has('https://live-segment.ts'), 'strips live segments when stripAllSegments is true');
 
+// Test: /_404/ and /processing URL patterns
+AdSegmentCache = new Map();
+const urlPattern404M3u8 = [
+    '#EXTM3U',
+    '#EXTINF:2.000,live',
+    'https://cdn.twitch.tv/_404/placeholder.ts',
+    '#EXTINF:2.000,live',
+    'https://cdn.twitch.tv/processing/ad-init.ts',
+    '#EXTINF:2.000,live',
+    'https://cdn.twitch.tv/normal-segment.ts',
+].join('\n');
+
+streamInfo = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false, RecoverySegments: [] };
+result = stripAdSegments(urlPattern404M3u8, false, streamInfo);
+assert(AdSegmentCache.has('https://cdn.twitch.tv/_404/placeholder.ts'), 'detects /_404/ URL pattern');
+assert(AdSegmentCache.has('https://cdn.twitch.tv/processing/ad-init.ts'), 'detects /processing URL pattern');
+assert(!AdSegmentCache.has('https://cdn.twitch.tv/normal-segment.ts'), 'does not flag normal segment');
+
+// Test: multiple signifiers in same m3u8
+AdSegmentCache = new Map();
+const multiSignifierM3u8 = [
+    '#EXTM3U',
+    '#EXT-X-CUE-OUT:DURATION=30',
+    '#EXTINF:2.000,stitched-ad',
+    'https://ad-1.ts',
+    'X-TV-TWITCH-AD-URL="https://example.com"',
+    '#EXT-X-CUE-IN',
+    '#EXTINF:2.000,live',
+    'https://live-1.ts',
+].join('\n');
+
+streamInfo = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false, RecoverySegments: [] };
+result = stripAdSegments(multiSignifierM3u8, false, streamInfo);
+assert(streamInfo.IsStrippingAdSegments === true, 'detects ads with multiple signifiers');
+assert(AdSegmentCache.has('https://ad-1.ts'), 'strips segment with multiple signifiers present');
+
+// Test: AdSegmentCache deduplication
+AdSegmentCache = new Map();
+const dupeM3u8 = [
+    '#EXTM3U',
+    '#EXTINF:2.000,stitched-ad',
+    'https://same-ad.ts',
+].join('\n');
+
+streamInfo = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false, RecoverySegments: [] };
+stripAdSegments(dupeM3u8, false, streamInfo);
+assertEq(streamInfo.NumStrippedAdSegments, 1, 'first strip increments count');
+streamInfo2 = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false, RecoverySegments: [] };
+stripAdSegments(dupeM3u8, false, streamInfo2);
+assertEq(streamInfo2.NumStrippedAdSegments, 0, 'duplicate URL does not increment count (already cached)');
+
 // ============================================================
 // Test: isValidWorker
 // ============================================================
@@ -412,6 +463,7 @@ assert(isValidWorker({ toString: () => 'function Worker() { isVariantA }' }) ===
 assert(isValidWorker({ toString: () => 'function Worker() { besuper/ }' }) === true, 'allows worker with besuper reinsert');
 assert(isValidWorker({ toString: () => 'function Worker() { /* clean */ }' }) === true, 'allows clean worker without conflicts');
 assert(isValidWorker({ toString: () => 'function Worker() { twitch isVariantA }' }) === true, 'allows conflict + reinsert combination');
+assert(isValidWorker({ toString: () => 'function Worker() { ${patch_url} }' }) === true, 'allows worker with ${patch_url} reinsert');
 
 // ============================================================
 // Test: AdSegmentCache TTL cleanup
@@ -428,6 +480,42 @@ AdSegmentCache.forEach((value, key, map) => {
 });
 assert(!AdSegmentCache.has('old-segment.ts'), 'removes segments older than 120s');
 assert(AdSegmentCache.has('new-segment.ts'), 'keeps recent segments');
+
+// ============================================================
+// Test: hasAdTags — each signifier individually
+// ============================================================
+console.log('--- hasAdTags (individual signifiers) ---');
+assert(hasAdTags('stitched') === true, 'detects stitched alone');
+assert(hasAdTags('stitched-ad') === true, 'detects stitched-ad alone');
+assert(hasAdTags('X-TV-TWITCH-AD') === true, 'detects X-TV-TWITCH-AD alone');
+assert(hasAdTags('EXT-X-CUE-OUT') === true, 'detects EXT-X-CUE-OUT alone');
+assert(hasAdTags('EXT-X-DATERANGE:CLASS="twitch-stitched-ad"') === true, 'detects EXT-X-DATERANGE alone');
+assert(hasAdTags('SCTE35-OUT') === true, 'detects SCTE35-OUT alone');
+
+// ============================================================
+// Test: getStreamUrlForResolution — edge cases
+// ============================================================
+console.log('--- getStreamUrlForResolution (edge cases) ---');
+assertEq(getStreamUrlForResolution('#EXTM3U\n', { Resolution: '1920x1080', FrameRate: 30 }), null, 'returns null for empty m3u8');
+assertEq(getStreamUrlForResolution('', { Resolution: '1920x1080', FrameRate: 30 }), null, 'returns null for empty string');
+
+// ============================================================
+// Test: getServerTimeFromM3u8 — edge cases
+// ============================================================
+console.log('--- getServerTimeFromM3u8 (edge cases) ---');
+V2API = false;
+assertEq(getServerTimeFromM3u8('SERVER-TIME=""'), null, 'returns null for empty server time');
+assertEq(getServerTimeFromM3u8('SERVER-TIME="abc"'), null, 'returns null for non-numeric v1 time');
+V2API = true;
+assertEq(getServerTimeFromM3u8('#EXT-X-SESSION-DATA:DATA-ID="OTHER",VALUE="123"'), null, 'returns null for wrong DATA-ID');
+V2API = false;
+
+// ============================================================
+// Test: parseAttributes — edge cases
+// ============================================================
+console.log('--- parseAttributes (edge cases) ---');
+const attrsEmpty = parseAttributes('');
+assert(typeof attrsEmpty === 'object', 'returns object for empty string');
 
 // ============================================================
 // Results
