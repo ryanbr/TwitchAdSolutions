@@ -1,7 +1,7 @@
 twitch-videoad.js text/javascript
 (function() {
     if ( /(^|\.)twitch\.tv$/.test(document.location.hostname) === false ) { return; }
-    const ourTwitchAdSolutionsVersion = 27;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 28;// Used to prevent conflicts with outdated versions of the scripts
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log("skipping video-swap-new as there's another script active. ourVersion:" + ourTwitchAdSolutionsVersion + " activeVersion:" + window.twitchAdSolutionsVersion);
         window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
@@ -10,10 +10,10 @@ twitch-videoad.js text/javascript
     window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
     function declareOptions(scope) {
         // Options / globals
-        scope.OPT_BACKUP_PLAYER_TYPES = [ 'autoplay', 'picture-by-picture', /*'autoplay-ALT',*/ 'embed' ];
+        scope.OPT_BACKUP_PLAYER_TYPES = [ 'autoplay', 'picture-by-picture', /*'autoplay-ALT',*/ 'embed', 'mobile_web' ];
         scope.OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE = 'popout';
-        scope.AD_SIGNIFIER = 'stitched-ad';// Legacy single signifier (kept for compatibility)
-        scope.AD_SIGNIFIERS = ['stitched', 'stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"'];
+        scope.AD_SIGNIFIERS = ['stitched', 'stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'SCTE35-OUT'];
+        scope.AD_SEGMENT_URL_PATTERNS = ['/adsquared/', '/_404/', '/processing'];
         scope.LIVE_SIGNIFIER = ',live';
         scope.CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
         // These are only really for Worker scope...
@@ -29,6 +29,7 @@ twitch-videoad.js text/javascript
         scope.AdSegmentCache = new Map();
         scope.AllSegmentsAreAdSegments = false;
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
+        scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
     }
     let twitchPlayerAndState = null;
     let localStorageHookFailed = false;
@@ -105,6 +106,7 @@ twitch-videoad.js text/javascript
                 const newBlobStr = `
                     const pendingFetchRequests = new Map();
                     ${hasAdTags.toString()}
+                    ${getMatchedAdSignifiers.toString()}
                     ${stripAdSegments.toString()}
                     ${processM3U8.toString()}
                     ${hookWorkerFetch.toString()}
@@ -122,6 +124,7 @@ twitch-videoad.js text/javascript
                     const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
                     declareOptions(self);
                     ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};
+                    PinBackupPlayerType = ${PinBackupPlayerType};
                     OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE = '${OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE}';
                     gql_device_id = ${gql_device_id ? "'" + gql_device_id + "'" : null};
                     AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
@@ -237,13 +240,22 @@ twitch-videoad.js text/javascript
             isMidroll: streamInfo.IsMidroll,
             hasAds: isShowingAd,
             isStrippingAdSegments: streamInfo.IsStrippingAdSegments,
-            numStrippedAdSegments: streamInfo.NumStrippedAdSegments
+            numStrippedAdSegments: streamInfo.NumStrippedAdSegments,
+            activeBackupPlayerType: streamInfo.BackupEncodingsPlayerTypeIndex >= 0 ? OPT_BACKUP_PLAYER_TYPES[streamInfo.BackupEncodingsPlayerTypeIndex] : null
         });
     }
     async function onFoundAd(streamInfo, textStr, reloadPlayer, realFetch, url, resolutionInfo) {
         let result = textStr;
         streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
-        const playerTypes = OPT_BACKUP_PLAYER_TYPES;
+        const playerTypes = [...OPT_BACKUP_PLAYER_TYPES];
+        // Try pinned backup player type first if available
+        if (PinBackupPlayerType && streamInfo.PinnedBackupPlayerType) {
+            const pinnedIndex = playerTypes.indexOf(streamInfo.PinnedBackupPlayerType);
+            if (pinnedIndex > 0) {
+                playerTypes.splice(pinnedIndex, 1);
+                playerTypes.unshift(streamInfo.PinnedBackupPlayerType);
+            }
+        }
         if (streamInfo.BackupEncodingsStatus.size >= playerTypes.length) {
             return textStr;
         }
@@ -254,6 +266,7 @@ twitch-videoad.js text/javascript
                 return await streamM3u8Response.text();
             }
         }
+        const backupSearchStart = Date.now();
         let backupPlayerTypeInfo = '';
         for (let i = 0; i < playerTypes.length; i++) {
             const playerType = playerTypes[i];
@@ -277,6 +290,9 @@ twitch-videoad.js text/javascript
                                     backupPlayerTypeInfo = ' (' + playerType + ')';
                                     streamInfo.BackupEncodingsStatus.set(playerType, 1);
                                     streamInfo.BackupEncodingsPlayerTypeIndex = i;
+                                    if (PinBackupPlayerType) {
+                                        streamInfo.PinnedBackupPlayerType = playerType;
+                                    }
                                     if (streamInfo.Encodings != null) {
                                         // Low resolution streams will reduce the number of resolutions in the UI. To fix this we merge the low res URLs into the main m3u8
                                         const normalEncodingsM3u8 = streamInfo.Encodings;
@@ -317,7 +333,7 @@ twitch-videoad.js text/javascript
                 }
             }
         }
-        console.log('Found ads, switch to backup' + backupPlayerTypeInfo);
+        console.log('Found ads, switch to backup' + backupPlayerTypeInfo + ' in ' + (Date.now() - backupSearchStart) + 'ms — signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
         if (reloadPlayer) {
             postMessage({key: ReloadPlayerAfterAd ? 'UboReloadPlayer' : 'UboPauseResumePlayer'});
         }
@@ -327,17 +343,27 @@ twitch-videoad.js text/javascript
     function hasAdTags(textStr) {
         return AD_SIGNIFIERS.some((s) => textStr.includes(s));
     }
+    function getMatchedAdSignifiers(textStr) {
+        return AD_SIGNIFIERS.filter((s) => textStr.includes(s));
+    }
     function stripAdSegments(textStr, stripAllSegments, streamInfo) {
         let hasStrippedAdSegments = false;
         let inCueOut = false;
+        const liveSegments = [];
         const lines = textStr.replaceAll('\r', '').split('\n');
         const newAdUrl = 'https://twitch.tv';
         for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
             // Track SCTE-35 CUE-OUT/CUE-IN ad boundaries
             if (line.includes('EXT-X-CUE-OUT')) {
+                if (!inCueOut) {
+                    console.log('[AD DEBUG] SCTE-35 CUE-OUT — ad boundary entered');
+                }
                 inCueOut = true;
             } else if (line.includes('EXT-X-CUE-IN')) {
+                if (inCueOut) {
+                    console.log('[AD DEBUG] SCTE-35 CUE-IN — ad boundary exited');
+                }
                 inCueOut = false;
             }
             // Remove tracking urls which appear in the overlay UI
@@ -351,6 +377,13 @@ twitch-videoad.js text/javascript
                 }
                 AdSegmentCache.set(segmentUrl, Date.now());
                 hasStrippedAdSegments = true;
+            } else if (i < lines.length - 1 && line.startsWith('#EXTINF') && AD_SEGMENT_URL_PATTERNS.some((p) => lines[i + 1].includes(p))) {
+                console.log('[AD DEBUG] Ad segment detected via URL pattern: ' + lines[i + 1]);
+                AdSegmentCache.set(lines[i + 1], Date.now());
+                hasStrippedAdSegments = true;
+                streamInfo.NumStrippedAdSegments++;
+            } else if (i < lines.length - 1 && line.startsWith('#EXTINF') && line.includes(',live')) {
+                liveSegments.push({ extinf: line, url: lines[i + 1] });
             }
             if (AD_SIGNIFIERS.some((s) => line.includes(s))) {
                 hasStrippedAdSegments = true;
@@ -365,6 +398,18 @@ twitch-videoad.js text/javascript
             }
         } else {
             streamInfo.NumStrippedAdSegments = 0;
+        }
+        // Cache live segments for recovery
+        if (liveSegments.length > 0) {
+            streamInfo.RecoverySegments = liveSegments.slice(-6);
+        }
+        // If all segments were stripped, restore cached recovery segments to prevent black screen
+        if (hasStrippedAdSegments && liveSegments.length === 0 && streamInfo.RecoverySegments && streamInfo.RecoverySegments.length > 0) {
+            console.log('[AD DEBUG] All segments stripped — restoring ' + streamInfo.RecoverySegments.length + ' recovery segments');
+            for (let j = 0; j < streamInfo.RecoverySegments.length; j++) {
+                lines.push(streamInfo.RecoverySegments[j].extinf);
+                lines.push(streamInfo.RecoverySegments[j].url);
+            }
         }
         streamInfo.IsStrippingAdSegments = hasStrippedAdSegments;
         AdSegmentCache.forEach((value, key, map) => {
@@ -382,6 +427,16 @@ twitch-videoad.js text/javascript
         const currentResolution = streamInfo.Urls.get(url);
         if (!currentResolution) {
             return textStr;
+        }
+        if (!streamInfo.HasCheckedUnknownTags) {
+            streamInfo.HasCheckedUnknownTags = true;
+            const unknownAdTags = textStr.match(/#EXT[^:\n]*(?:ad|cue|scte|sponsor)[^:\n]*/gi);
+            if (unknownAdTags) {
+                const unknown = unknownAdTags.filter(t => !AD_SIGNIFIERS.some(s => t.includes(s)));
+                if (unknown.length > 0) {
+                    console.log('[AD DEBUG] Unknown ad-related tags found: ' + [...new Set(unknown)].join(', '));
+                }
+            }
         }
         const haveAdTags = hasAdTags(textStr) || (SimulatedAdsDepth > 0 && (!streamInfo.BackupEncodings || !streamInfo.BackupEncodings.includes(url) || SimulatedAdsDepth - 1 > streamInfo.BackupEncodingsPlayerTypeIndex));
         if (streamInfo.BackupEncodings) {
@@ -500,10 +555,13 @@ twitch-videoad.js text/javascript
                                 BackupEncodings: null,
                                 BackupEncodingsStatus: new Map(),
                                 BackupEncodingsPlayerTypeIndex: -1,
+                                PinnedBackupPlayerType: null,
+                                HasCheckedUnknownTags: false,
                                 IsMovingOffBackupEncodings: false,
                                 IsMidroll: false,
                                 IsStrippingAdSegments: false,
                                 NumStrippedAdSegments: 0,
+                                RecoverySegments: [],
                                 CleanPlaylistCount: 0,
                                 UseFallbackStream: false,
                                 ChannelName: channelName,
@@ -743,10 +801,10 @@ twitch-videoad.js text/javascript
         const playerRootDiv = document.querySelector('.video-player');
         if (playerRootDiv != null) {
             let adBlockDiv = null;
-            adBlockDiv = playerRootDiv.querySelector('.adblock-overlay');
+            adBlockDiv = playerRootDiv.querySelector('.tas-adblock-overlay');
             if (adBlockDiv == null) {
                 adBlockDiv = document.createElement('div');
-                adBlockDiv.className = 'adblock-overlay';
+                adBlockDiv.className = 'tas-adblock-overlay';
                 adBlockDiv.innerHTML = '<div class="player-adblock-notice" style="color: white; background-color: rgba(0, 0, 0, 0.8); position: absolute; top: 0px; left: 0px; padding: 5px;"><p></p></div>';
                 adBlockDiv.style.display = 'none';
                 adBlockDiv.P = adBlockDiv.querySelector('p');
@@ -757,7 +815,7 @@ twitch-videoad.js text/javascript
                     twitchPlayerAndState = getPlayerAndState();
                 }
                 const isLive = twitchPlayerAndState?.state?.props?.content?.type === 'live';
-                adBlockDiv.P.textContent = 'Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '');// + (data.numStrippedAdSegments > 0 ? ` (${data.numStrippedAdSegments})` : '');
+                adBlockDiv.P.textContent = 'Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '') + (data.activeBackupPlayerType ? ' (' + data.activeBackupPlayerType + ')' : '');
                 adBlockDiv.style.display = data.hasAds && isLive ? 'block' : 'none';
             }
         }
@@ -862,7 +920,8 @@ twitch-videoad.js text/javascript
         } catch {}
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
         player.play();
-        if (localStorageHookFailed && (currentQualityLS || currentMutedLS || currentVolumeLS)) {
+        // Always restore muted/volume state after reload — Chrome autoplay policy can force muted
+        if (currentQualityLS || currentMutedLS || currentVolumeLS) {
             setTimeout(() => {
                 try {
                     if (currentQualityLS) {
@@ -874,11 +933,18 @@ twitch-videoad.js text/javascript
                     if (currentVolumeLS) {
                         localStorage.setItem(lsKeyVolume, currentVolumeLS);
                     }
+                    const videos = document.getElementsByTagName('video');
+                    if (videos.length > 0 && videos[0].muted) {
+                        videos[0].muted = false;
+                    }
                 } catch {}
             }, 3000);
         }
     }
     function onContentLoaded() {
+        if (document.getElementById('seventv-extension')) {
+            console.log('[AD DEBUG] Warning: 7TV extension detected — may cause black screen or buffering issues. If you experience problems, try disabling 7TV.');
+        }
         // This stops Twitch from pausing the player when in another tab and an ad shows.
         // Taken from https://github.com/saucettv/VideoAdBlockForTwitch/blob/cefce9d2b565769c77e3666ac8234c3acfe20d83/chrome/content.js#L30
         try {
@@ -909,7 +975,7 @@ twitch-videoad.js text/javascript
                 if (videos.length > 0) {
                     if (hidden.apply(document) === true || (webkitHidden && webkitHidden.apply(document) === true)) {
                         wasVideoPlaying = !videos[0].paused && !videos[0].ended;
-                    } else if (wasVideoPlaying && !videos[0].ended && videos[0].paused && videos[0].muted) {
+                    } else if (wasVideoPlaying && !videos[0].ended && videos[0].paused) {
                         videos[0].play();
                     }
                 }
@@ -983,8 +1049,18 @@ twitch-videoad.js text/javascript
         if (lsPlayerType !== null) {
             OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE = lsPlayerType;
         }
+        const lsPinBackup = localStorage.getItem('twitchAdSolutions_pinBackupPlayerType');
+        if (lsPinBackup !== null) {
+            PinBackupPlayerType = lsPinBackup === 'true';
+        }
+        const lsHideAdOverlay = localStorage.getItem('twitchAdSolutions_hideAdOverlay');
+        if (lsHideAdOverlay === 'true') {
+            const style = document.createElement('style');
+            style.textContent = '.tas-adblock-overlay { display: none !important; }';
+            (document.head || document.documentElement).appendChild(style);
+        }
     } catch {}
-    console.log('[AD DEBUG] Config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd + ', ForceAccessTokenPlayerType = ' + OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE);
+    console.log('[AD DEBUG] Config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd + ', ForceAccessTokenPlayerType = ' + OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE + ', PinBackupPlayerType = ' + PinBackupPlayerType);
     hookWindowWorker();
     hookFetch();
     monitorLiveStatus();

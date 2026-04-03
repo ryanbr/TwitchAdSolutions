@@ -3,6 +3,9 @@ name: Create Release
 on:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   create-release:
     permissions:
@@ -16,16 +19,46 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Install acorn
+      run: npm install -g acorn
+
+    - name: Validate userscripts
+      run: |
+        for f in vaft/vaft.user.js vaft/vaft_testing.user.js video-swap-new/video-swap-new.user.js strip/strip.user.js; do
+          echo "Validating $f..."
+          acorn --ecma2022 "$f" > /dev/null
+        done
+
+    - name: Validate uBlock scripts
+      run: |
+        for f in vaft/vaft-ublock-origin.js vaft/vaft-testing-ublock-origin.js video-swap-new/video-swap-new-ublock-origin.js; do
+          echo "Validating $f..."
+          tail -n +2 "$f" | acorn --ecma2022 > /dev/null
+        done
+
+    - name: Get version from script
+      id: version
+      run: |
+        VERSION=$(grep -m1 '@version' vaft/vaft.user.js | sed 's/.*@version\s*//')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
     - name: Set up Git user
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+    - name: Create version commit and tag
+      run: |
+        git commit --allow-empty -m "v${{ steps.version.outputs.version }}"
+        git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
+        git push origin master
+        git push origin "v${{ steps.version.outputs.version }}"
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: "v${{ github.run_number }}"
-        name: "Release v${{ github.run_number }}"
+        tag_name: "v${{ steps.version.outputs.version }}"
+        name: "Release v${{ steps.version.outputs.version }}"
         body_path: CHANGELOG.md
         draft: false
         prerelease: false

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (strip) - BAD, DON'T USE THIS
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      1.2
+// @version      1.4
 // @description  Multiple solutions for blocking Twitch ads (strip)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/strip/strip.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/strip/strip.user.js
@@ -13,7 +13,7 @@
 // ==/UserScript==
 (function() {
     'use strict';
-    const ourTwitchAdSolutionsVersion = 20;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 21;// Used to prevent conflicts with outdated versions of the scripts
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log("skipping strip as there's another script active. ourVersion:" + ourTwitchAdSolutionsVersion + " activeVersion:" + window.twitchAdSolutionsVersion);
         window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
@@ -148,10 +148,10 @@
                     const playerRootDiv = document.querySelector('.video-player');
                     let adBlockDiv = null;
                     if (playerRootDiv != null) {
-                        adBlockDiv = playerRootDiv.querySelector('.adblock-overlay');
+                        adBlockDiv = playerRootDiv.querySelector('.tas-adblock-overlay');
                         if (adBlockDiv == null) {
                             adBlockDiv = document.createElement('div');
-                            adBlockDiv.className = 'adblock-overlay';
+                            adBlockDiv.className = 'tas-adblock-overlay';
                             adBlockDiv.innerHTML = '<div class="player-adblock-notice" style="color: white; background-color: rgba(0, 0, 0, 0.8); position: absolute; top: 0px; left: 0px; padding: 5px;"><p></p></div>';
                             adBlockDiv.style.display = 'none';
                             adBlockDiv.P = adBlockDiv.querySelector('p');
@@ -475,6 +475,9 @@
         }
     }
     function onContentLoaded() {
+        if (document.getElementById('seventv-extension')) {
+            console.log('[AD DEBUG] Warning: 7TV extension detected — may cause black screen or buffering issues. If you experience problems, try disabling 7TV.');
+        }
         // Hooks for preserving volume / resolution
         try {
             const keysToCache = [

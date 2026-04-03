@@ -1,18 +1,6 @@
-// ==UserScript==
-// @name         TwitchAdSolutions (video-swap-new)
-// @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      1.60
-// @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
-// @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
-// @description  Multiple solutions for blocking Twitch ads (video-swap-new)
-// @author       pixeltris (original), ryanbr (fork)
-// @match        *://*.twitch.tv/*
-// @run-at       document-start
-// @inject-into  page
-// @grant        none
-// ==/UserScript==
+twitch-videoad.js text/javascript
 (function() {
-    'use strict';
+    if ( /(^|\.)twitch\.tv$/.test(document.location.hostname) === false ) { return; }
     const ourTwitchAdSolutionsVersion = 28;// Used to prevent conflicts with outdated versions of the scripts
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log("skipping video-swap-new as there's another script active. ourVersion:" + ourTwitchAdSolutionsVersion + " activeVersion:" + window.twitchAdSolutionsVersion);
@@ -904,7 +892,9 @@
             console.log('Could not find player state');
             return;
         }
-        if (player.isPaused() || player.core?.paused) {
+        const wasPaused = player.isPaused() || player.core?.paused;
+        // Only block pause/play toggle if already paused — still allow reloads
+        if (isPausePlay && wasPaused) {
             return;
         }
         if (isPausePlay) {
@@ -931,7 +921,18 @@
             }
         } catch {}
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
-        player.play();
+        // Resume playback with retry — only if user hadn't manually paused
+        if (!wasPaused) {
+            player.play();
+            // Retry resume if play() didn't take effect
+            setTimeout(() => {
+                try {
+                    if (player.isPaused() && !player.core?.paused) {
+                        player.play();
+                    }
+                } catch {}
+            }, 1500);
+        }
         // Always restore muted/volume state after reload — Chrome autoplay policy can force muted
         if (currentQualityLS || currentMutedLS || currentVolumeLS) {
             setTimeout(() => {
