@@ -26,7 +26,7 @@ Comparison of ryanbr/TwitchAdSolutions (release & testing) vs GosuDRM/TTV-AB 5.0
 | Ad-end grace period | PR | Yes | Yes | No |
 | Dead backup detection | PR | Yes | No | No |
 | Post-ad resume retry | PR | Yes | Yes | No |
-| Muted state restore | PR | Yes | Yes | No |
+| Muted state restore | Yes | Yes | Yes | No |
 | Player error auto-recovery | No | Yes | Yes | No |
 
 ## Player Stability
