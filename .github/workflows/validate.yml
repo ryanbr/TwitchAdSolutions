@@ -8,6 +8,9 @@ on:
     paths:
       - "**/*.js"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest
