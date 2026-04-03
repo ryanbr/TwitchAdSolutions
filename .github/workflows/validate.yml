@@ -33,3 +33,6 @@ jobs:
           echo "Validating $f..."
           tail -n +2 "$f" | acorn --ecma2022 > /dev/null
         done
+
+    - name: Run unit tests
+      run: node tests/test.js
