@@ -1,0 +1,86 @@
+name: Bug Report
+description: Report an issue with TwitchAdSolutions
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before submitting, please check:**
+        - [ ] I am using the latest version (not a permalink)
+        - [ ] I have restarted my browser / disabled and re-enabled uBlock Origin
+        - [ ] I have checked [Known Extension Conflicts](https://github.com/ryanbr/TwitchAdSolutions/blob/master/README.md#known-extension-conflicts) — 7TV, TTV-AB, Purple AdBlock, and TwitchNoSub are known to cause issues
+
+  - type: dropdown
+    id: script
+    attributes:
+      label: Which script are you using?
+      options:
+        - vaft (userscript)
+        - vaft (uBlock Origin)
+        - video-swap-new (userscript)
+        - video-swap-new (uBlock Origin)
+        - strip (userscript)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Chrome
+        - Firefox
+        - Brave
+        - Edge
+        - Safari
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - uBlock Origin
+        - Tampermonkey
+        - Violentmonkey
+        - Brave (built-in)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      placeholder: Describe the issue (black screen, buffering, ads showing, etc.)
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: Open browser console (F12) and paste any [AD DEBUG] messages or errors
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: extensions
+    attributes:
+      label: Other Twitch extensions installed
+      description: List any other Twitch-related extensions (7TV, BTTV, FFZ, TTV-AB, Purple AdBlock, etc.)
+      placeholder: "e.g. 7TV, BetterTTV, FrankerFaceZ"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: conflicts
+    attributes:
+      label: Troubleshooting
+      options:
+        - label: Issue persists with all other Twitch extensions disabled
+        - label: Issue persists after clearing browser cache and restarting
+        - label: Issue does NOT occur without the script installed
