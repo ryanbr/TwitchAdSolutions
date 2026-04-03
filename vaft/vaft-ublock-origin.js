@@ -998,7 +998,7 @@ twitch-videoad.js text/javascript
                             videos[0].muted = false;
                         }
                         // Correct live drift after reload
-                        if (videos.length > 0 && videos[0].buffered.length > 0) {
+                        if (videos.length > 0 && videos[0].buffered.length > 0 && videos[0].readyState >= 3) {
                             const liveEdge = videos[0].buffered.end(videos[0].buffered.length - 1);
                             const drift = liveEdge - videos[0].currentTime;
                             if (drift > 2) {
