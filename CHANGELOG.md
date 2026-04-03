@@ -1,4 +1,15 @@
-## Unreleased
+## v45.0.0
+
+### Player Stability
+- Add live drift correction after player reload (seeks to live edge if >2s behind)
+- Add buffer fix escalation (3 consecutive failures → full player reload)
+- Add readyState guard to prevent seeking during active rebuffers
+- Detect 7TV extension and log compatibility warning
+
+### Other
+- Add known extension conflicts section to README
+- Add GitHub issue template for bug reports
+- Add unit tests (73 tests) with CI integration
 
 ## v44.0.0
 
