@@ -771,6 +771,7 @@
         bufferedPosition: 0,
         bufferDuration: 0,
         numSame: 0,
+        fixAttempts: 0,
         lastFixTime: 0,
         isLive: true
     };
@@ -816,15 +817,21 @@
                         ) {
                             playerBufferState.numSame++;
                             if (playerBufferState.numSame == PlayerBufferingSameStateCount) {
-                                console.log('Attempt to fix buffering position:' + playerBufferState.position + ' bufferedPosition:' + playerBufferState.bufferedPosition + ' bufferDuration:' + playerBufferState.bufferDuration);
-                                const isPausePlay = !PlayerBufferingDoPlayerReload;
-                                const isReload = PlayerBufferingDoPlayerReload;
+                                playerBufferState.fixAttempts++;
+                                const escalateToReload = playerBufferState.fixAttempts >= 3;
+                                console.log('Attempt to fix buffering position:' + playerBufferState.position + ' bufferedPosition:' + playerBufferState.bufferedPosition + ' bufferDuration:' + playerBufferState.bufferDuration + (escalateToReload ? ' (escalating to reload)' : ''));
+                                const isPausePlay = escalateToReload ? false : !PlayerBufferingDoPlayerReload;
+                                const isReload = escalateToReload ? true : PlayerBufferingDoPlayerReload;
                                 doTwitchPlayerTask(isPausePlay, isReload);
                                 playerBufferState.lastFixTime = Date.now();
                                 playerBufferState.numSame = 0;
+                                if (escalateToReload) {
+                                    playerBufferState.fixAttempts = 0;
+                                }
                             }
                         } else {
                             playerBufferState.numSame = 0;
+                            playerBufferState.fixAttempts = 0;
                         }
                         playerBufferState.position = position;
                         playerBufferState.bufferedPosition = bufferedPosition;
@@ -1000,6 +1007,15 @@
                         const videos = document.getElementsByTagName('video');
                         if (videos.length > 0 && videos[0].muted) {
                             videos[0].muted = false;
+                        }
+                        // Correct live drift after reload
+                        if (videos.length > 0 && videos[0].buffered.length > 0) {
+                            const liveEdge = videos[0].buffered.end(videos[0].buffered.length - 1);
+                            const drift = liveEdge - videos[0].currentTime;
+                            if (drift > 2) {
+                                console.log('[AD DEBUG] Post-reload live drift correction: ' + drift.toFixed(1) + 's behind');
+                                videos[0].currentTime = liveEdge - 0.5;
+                            }
                         }
                     } catch {}
                 }, 3000);
