@@ -105,6 +105,7 @@ twitch-videoad.js text/javascript
                 const newBlobStr = `
                     const pendingFetchRequests = new Map();
                     ${hasAdTags.toString()}
+                    ${getMatchedAdSignifiers.toString()}
                     ${stripAdSegments.toString()}
                     ${processM3U8.toString()}
                     ${hookWorkerFetch.toString()}
@@ -255,6 +256,7 @@ twitch-videoad.js text/javascript
                 return await streamM3u8Response.text();
             }
         }
+        const backupSearchStart = Date.now();
         let backupPlayerTypeInfo = '';
         for (let i = 0; i < playerTypes.length; i++) {
             const playerType = playerTypes[i];
@@ -318,7 +320,7 @@ twitch-videoad.js text/javascript
                 }
             }
         }
-        console.log('Found ads, switch to backup' + backupPlayerTypeInfo);
+        console.log('Found ads, switch to backup' + backupPlayerTypeInfo + ' in ' + (Date.now() - backupSearchStart) + 'ms — signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
         if (reloadPlayer) {
             postMessage({key: ReloadPlayerAfterAd ? 'UboReloadPlayer' : 'UboPauseResumePlayer'});
         }
@@ -327,6 +329,9 @@ twitch-videoad.js text/javascript
     }
     function hasAdTags(textStr) {
         return AD_SIGNIFIERS.some((s) => textStr.includes(s));
+    }
+    function getMatchedAdSignifiers(textStr) {
+        return AD_SIGNIFIERS.filter((s) => textStr.includes(s));
     }
     function stripAdSegments(textStr, stripAllSegments, streamInfo) {
         let hasStrippedAdSegments = false;
@@ -338,8 +343,14 @@ twitch-videoad.js text/javascript
             let line = lines[i];
             // Track SCTE-35 CUE-OUT/CUE-IN ad boundaries
             if (line.includes('EXT-X-CUE-OUT')) {
+                if (!inCueOut) {
+                    console.log('[AD DEBUG] SCTE-35 CUE-OUT — ad boundary entered');
+                }
                 inCueOut = true;
             } else if (line.includes('EXT-X-CUE-IN')) {
+                if (inCueOut) {
+                    console.log('[AD DEBUG] SCTE-35 CUE-IN — ad boundary exited');
+                }
                 inCueOut = false;
             }
             // Remove tracking urls which appear in the overlay UI
@@ -403,6 +414,16 @@ twitch-videoad.js text/javascript
         const currentResolution = streamInfo.Urls.get(url);
         if (!currentResolution) {
             return textStr;
+        }
+        if (!streamInfo.HasCheckedUnknownTags) {
+            streamInfo.HasCheckedUnknownTags = true;
+            const unknownAdTags = textStr.match(/#EXT[^:\n]*(?:ad|cue|scte|sponsor)[^:\n]*/gi);
+            if (unknownAdTags) {
+                const unknown = unknownAdTags.filter(t => !AD_SIGNIFIERS.some(s => t.includes(s)));
+                if (unknown.length > 0) {
+                    console.log('[AD DEBUG] Unknown ad-related tags found: ' + [...new Set(unknown)].join(', '));
+                }
+            }
         }
         const haveAdTags = hasAdTags(textStr) || (SimulatedAdsDepth > 0 && (!streamInfo.BackupEncodings || !streamInfo.BackupEncodings.includes(url) || SimulatedAdsDepth - 1 > streamInfo.BackupEncodingsPlayerTypeIndex));
         if (streamInfo.BackupEncodings) {
@@ -509,6 +530,7 @@ twitch-videoad.js text/javascript
                                 BackupEncodings: null,
                                 BackupEncodingsStatus: new Map(),
                                 BackupEncodingsPlayerTypeIndex: -1,
+                                HasCheckedUnknownTags: false,
                                 IsMovingOffBackupEncodings: false,
                                 IsMidroll: false,
                                 IsStrippingAdSegments: false,
