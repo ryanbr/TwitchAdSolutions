@@ -1,4 +1,37 @@
-## Changes since pixeltris (upstream)
+## Unreleased
+
+## v44.0.0
+
+### Ad Detection
+- Add SCTE35-OUT signifier for alternative SCTE-35 marker detection
+- Add ad segment URL pattern detection (/adsquared/, /_404/, /processing)
+- Log matched ad signifiers when ads are detected
+- Log SCTE-35 CUE-OUT/CUE-IN ad boundary transitions
+- Detect and log unknown ad-related HLS tags
+
+### Backup Stream
+- Track failed backup player types and skip them during ad breaks
+- Pin successful backup player type across ad breaks (opt-in via localStorage)
+- Add mobile_web to backup player types
+- Log backup stream search time in ms
+- Show backup player type in ad blocking banner
+
+### Ad Recovery
+- Add segment recovery cache to prevent black screen when all segments are stripped
+
+### Bug Fixes
+- Rename .adblock-overlay to .tas-adblock-overlay to fix Twitch CSS conflict (#19)
+- Remove unused legacy singular ad signifier variables
+- Remove unused isChrome variable from vaft visibility handler
+
+### Configuration
+- Add pinBackupPlayerType localStorage option
+- Add hideAdOverlay localStorage option to hide "Blocking ads" banner
+
+### Compatibility
+- Auto-resume video on tab return regardless of muted state
+
+## v42.0.0
 
 ### Ad Detection
 - Add SCTE-35 ad signifier detection and CUE-OUT/CUE-IN tracking
@@ -33,6 +66,7 @@
 - Add vaft testing scripts with player error auto-recovery (#2000/#3000/#4000)
 
 ### Other
+- Add ReloadPlayerAfterAd and ForceAccessTokenPlayerType config options with localStorage toggles
 - Update userscript URLs and author fields to ryanbr repo
 - Clear old worker references when creating new Twitch worker
 - Clear RequestedAds set when ads finish

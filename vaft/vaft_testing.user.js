@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft-testing)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      42.0.0
+// @version      44.0.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -13,7 +13,7 @@
 // ==/UserScript==
 (function() {
     'use strict';
-    const ourTwitchAdSolutionsVersion = 30;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 31;// Used to prevent conflicts with outdated versions of the scripts
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log("skipping vaft as there's another script active. ourVersion:" + ourTwitchAdSolutionsVersion + " activeVersion:" + window.twitchAdSolutionsVersion);
         window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
@@ -22,7 +22,6 @@
     window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
     // Configuration and state shared between window and worker scopes
     function declareOptions(scope) {
-        scope.AdSignifier = 'stitched';// Legacy single signifier (kept for compatibility)
         scope.AdSignifiers = ['stitched', 'stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"'];
         scope.ClientID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
         scope.BackupPlayerTypes = [
@@ -856,10 +855,10 @@
         const playerRootDiv = cachedPlayerRootDiv;
         if (playerRootDiv != null) {
             let adBlockDiv = null;
-            adBlockDiv = playerRootDiv.querySelector('.adblock-overlay');
+            adBlockDiv = playerRootDiv.querySelector('.tas-adblock-overlay');
             if (adBlockDiv == null) {
                 adBlockDiv = document.createElement('div');
-                adBlockDiv.className = 'adblock-overlay';
+                adBlockDiv.className = 'tas-adblock-overlay';
                 adBlockDiv.innerHTML = '<div class="player-adblock-notice" style="color: white; background-color: rgba(0, 0, 0, 0.8); position: absolute; top: 0px; left: 0px; padding: 5px;"><p></p></div>';
                 adBlockDiv.style.display = 'none';
                 adBlockDiv.P = adBlockDiv.querySelector('p');
@@ -970,7 +969,8 @@
             playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
             postTwitchWorkerMessage('TriggeredPlayerReload');
             player.play();
-            if (localStorageHookFailed && (currentQualityLS || currentMutedLS || currentVolumeLS)) {
+            // Always restore muted/volume state after reload — Chrome autoplay policy can force muted
+            if (currentQualityLS || currentMutedLS || currentVolumeLS) {
                 setTimeout(() => {
                     try {
                         if (currentQualityLS) {
@@ -1079,6 +1079,9 @@
     }
     // Set up visibility overrides and localStorage hooks to preserve player state across reloads
     function onContentLoaded() {
+        if (document.getElementById('seventv-extension')) {
+            console.log('[AD DEBUG] Warning: 7TV extension detected — may cause black screen or buffering issues. If you experience problems, try disabling 7TV.');
+        }
         // This stops Twitch from pausing the player when in another tab and an ad shows.
         // Taken from https://github.com/saucettv/VideoAdBlockForTwitch/blob/cefce9d2b565769c77e3666ac8234c3acfe20d83/chrome/content.js#L30
         try {
@@ -1103,7 +1106,6 @@
         };
         let wasVideoPlaying = true;
         const visibilityChange = e => {
-            const isChrome = typeof chrome !== 'undefined';
             const videos = document.getElementsByTagName('video');
             if (videos.length > 0) {
                 if (hidden && hidden.apply(document) === true) {
@@ -1113,7 +1115,7 @@
                         //console.log('Tab focused. Stream should be active');
                         playerBufferState.hasStreamStarted = true;
                     }
-                    if (wasVideoPlaying && !videos[0].ended && videos[0].paused && videos[0].muted) {
+                    if (wasVideoPlaying && !videos[0].ended && videos[0].paused) {
                         videos[0].play();
                     }
                 }

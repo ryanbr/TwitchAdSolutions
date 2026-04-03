@@ -62,6 +62,51 @@ Userscript managers:
 
 *Greasemonkey doesn't work with the scripts.*
 
+## Configuration
+
+The scripts support runtime configuration via `localStorage`. Set values in the browser console and refresh the page.
+
+**`twitchAdSolutions_reloadPlayerAfterAd`** (default: `true`)
+- `true` - full player reload after ads (slower, more reliable)
+- `false` - pause/play after ads (faster, less reliable)
+- Not set - uses default (`true`)
+
+**`twitchAdSolutions_playerType`** (default: `popout`)
+- Changes the player type used for access token requests
+- `popout` - popout player context, tends to receive fewer ads (default)
+- `embed` - embedded player context, used for third-party sites
+- `site` - normal site player, standard Twitch experience (most ads)
+- `autoplay` - autoplay context, lower quality (360p)
+- Not set - uses default (`popout`)
+
+**`twitchAdSolutions_hideAdOverlay`** (default: not set)
+- `true` - hide the "Blocking ads" banner overlay on the video player
+- Not set - banner is visible during ad blocking (default)
+
+```js
+// Faster post-ad transition
+localStorage.setItem('twitchAdSolutions_reloadPlayerAfterAd', 'false');
+
+// Change player type
+localStorage.setItem('twitchAdSolutions_playerType', 'embed');
+
+// Hide ad blocking banner
+localStorage.setItem('twitchAdSolutions_hideAdOverlay', 'true');
+
+// Restore defaults
+localStorage.removeItem('twitchAdSolutions_reloadPlayerAfterAd');
+localStorage.removeItem('twitchAdSolutions_playerType');
+localStorage.removeItem('twitchAdSolutions_hideAdOverlay');
+```
+
+## Known Extension Conflicts
+
+- **7TV** — may cause black screen / infinite buffering ([#17](https://github.com/ryanbr/TwitchAdSolutions/issues/17))
+- **TwitchNoSub** — handled automatically via workerStringReinsert, but older versions may conflict
+- **TTV-AB** — running both simultaneously may cause duplicate ad blocking and errors. Use one or the other.
+- **Purple AdBlock** — may conflict if both are active. Disable one.
+- **AdGuard Extra** — operates at a different layer, can be used alongside without conflict
+
 ## Issues with the scripts
 
 If the script doesn't work or you're experiencing freezing / buffering issues see [issues.md](issues.md)
