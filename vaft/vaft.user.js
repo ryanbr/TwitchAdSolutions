@@ -322,7 +322,8 @@
                                         IsStrippingAdSegments: false,
                                         NumStrippedAdSegments: 0,
                                         RecoverySegments: [],
-                                        FailedBackupPlayerTypes: new Set()
+                                        FailedBackupPlayerTypes: new Set(),
+                                        CleanPlaylistCount: 0
                                     };
                                     const lines = encodingsM3u8.split(/\r?\n/);
                                     for (let i = 0; i < lines.length - 1; i++) {
@@ -539,6 +540,7 @@
         }
         const haveAdTags = hasAdTags(textStr) || SimulatedAdsDepth > 0;
         if (haveAdTags) {
+            streamInfo.CleanPlaylistCount = 0;
             streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
             if (!streamInfo.IsShowingAd) {
                 streamInfo.IsShowingAd = true;
@@ -699,23 +701,32 @@
                 console.log('[AD DEBUG] Ad stripping disabled and no backup — ads WILL show');
             }
         } else if (streamInfo.IsShowingAd) {
-            console.log('Finished blocking ads — stripped ' + streamInfo.NumStrippedAdSegments + ' ad segments');
-            streamInfo.IsShowingAd = false;
-            streamInfo.IsStrippingAdSegments = false;
-            streamInfo.NumStrippedAdSegments = 0;
-            streamInfo.ActiveBackupPlayerType = null;
-            streamInfo.RequestedAds.clear();
-            streamInfo.FailedBackupPlayerTypes.clear();
-            if (streamInfo.IsUsingModifiedM3U8 || ReloadPlayerAfterAd) {
-                streamInfo.IsUsingModifiedM3U8 = false;
-                streamInfo.LastPlayerReload = Date.now();
-                postMessage({
-                    key: 'ReloadPlayer'
-                });
-            } else {
-                postMessage({
-                    key: 'PauseResumePlayer'
-                });
+            streamInfo.CleanPlaylistCount++;
+            // Check if the current playlist has live segments — if not, backup stream is dead
+            const hasLiveSegments = textStr.includes(',live');
+            if (streamInfo.CleanPlaylistCount >= 2 || !hasLiveSegments) {
+                if (!hasLiveSegments) {
+                    console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
+                }
+                console.log('Finished blocking ads — stripped ' + streamInfo.NumStrippedAdSegments + ' ad segments');
+                streamInfo.IsShowingAd = false;
+                streamInfo.IsStrippingAdSegments = false;
+                streamInfo.NumStrippedAdSegments = 0;
+                streamInfo.ActiveBackupPlayerType = null;
+                streamInfo.RequestedAds.clear();
+                streamInfo.FailedBackupPlayerTypes.clear();
+                streamInfo.CleanPlaylistCount = 0;
+                if (streamInfo.IsUsingModifiedM3U8 || ReloadPlayerAfterAd) {
+                    streamInfo.IsUsingModifiedM3U8 = false;
+                    streamInfo.LastPlayerReload = Date.now();
+                    postMessage({
+                        key: 'ReloadPlayer'
+                    });
+                } else {
+                    postMessage({
+                        key: 'PauseResumePlayer'
+                    });
+                }
             }
         }
         postMessage({
