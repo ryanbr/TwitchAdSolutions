@@ -541,6 +541,21 @@
         }
         return realXHROpen.apply(this, arguments);
     };
+    new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+                if (node.nodeType === 1) {
+                    const videos = node.tagName === 'VIDEO' ? [node] : node.querySelectorAll ? Array.from(node.querySelectorAll('video, source')) : [];
+                    for (const el of videos) {
+                        const src = el.src || el.getAttribute('src') || '';
+                        if (src && !src.includes('.ttvnw.net') && !src.includes('blob:') && !src.includes('data:')) {
+                            console.log('[AD DEBUG] Non-Twitch video element detected — src: ' + src);
+                        }
+                    }
+                }
+            }
+        }
+    }).observe(document.documentElement, { childList: true, subtree: true });
     if (document.readyState === "complete" || document.readyState === "interactive") {
         onContentLoaded();
     } else {
