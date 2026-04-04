@@ -47,9 +47,15 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+    - name: Update permalink hashes in README
+      run: |
+        CURRENT_HASH=$(git rev-parse HEAD)
+        sed -i "s|/ryanbr/TwitchAdSolutions/[a-f0-9]\{40\}/|/ryanbr/TwitchAdSolutions/${CURRENT_HASH}/|g" README.md
+        git add README.md
+
     - name: Create version commit and tag
       run: |
-        git commit --allow-empty -m "v${{ steps.version.outputs.version }}"
+        git commit -m "v${{ steps.version.outputs.version }}"
         git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
         git push origin master
         git push origin "v${{ steps.version.outputs.version }}"
