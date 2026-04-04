@@ -1262,6 +1262,15 @@
     console.log('[AD DEBUG] Config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd + ', ForceAccessTokenPlayerType = ' + ForceAccessTokenPlayerType + ', PinBackupPlayerType = ' + PinBackupPlayerType);
     hookWindowWorker();
     hookFetch();
+    // Hook XHR to detect CSAI ad requests that bypass fetch
+    const realXHROpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+        if (typeof url === 'string' && url.includes('edge.ads.twitch.tv')) {
+            const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
+            console.log('[AD DEBUG] CSAI ad request (XHR) detected — type: ' + csaiType);
+        }
+        return realXHROpen.apply(this, arguments);
+    };
     if (PlayerBufferingFix) {
         monitorPlayerBuffering();
     }
