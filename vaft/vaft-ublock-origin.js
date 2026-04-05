@@ -998,13 +998,19 @@ twitch-videoad.js text/javascript
             return;
         }
         if (player.isPaused() || player.core?.paused) {
+            // If WE recently called pause/play and player is still paused, retry play (stuck from autoplay policy or ad-state interference)
+            if (playerBufferState.weJustPaused && (Date.now() - playerBufferState.weJustPaused) < 10000) {
+                try { player.play(); } catch {}
+            }
             return;
         }
+        playerBufferState.weJustPaused = 0;
         playerBufferState.lastFixTime = Date.now();
         playerBufferState.numSame = 0;
         if (isPausePlay) {
             player.pause();
             player.play();
+            playerBufferState.weJustPaused = Date.now();
             return;
         }
         if (isReload) {
