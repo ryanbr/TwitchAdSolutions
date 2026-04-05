@@ -3,10 +3,12 @@
 ### Ad Detection
 - Add maf-ad ID signifier
 - Add twitch-stream-source, twitch-trigger, twitch-maf-ad, twitch-ad-quartile DATERANGE class signifiers (adopted from uBO playlist replace rule)
+- Generalize X-TV-TWITCH-AD-*-URL rewrite to catch all ad beacon attributes (quartile, impression, etc.)
 
 ### Debug Logging
 - Detect and log CSAI (client-side ad insertion) requests via fetch, XHR, and DOM injection
 - Monitor for non-Twitch video elements to identify ad delivery paths
+- Log ad tracking attribute names seen per stream (identifies new beacon types)
 
 ## v45.0.0
 
