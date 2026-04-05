@@ -936,9 +936,9 @@ twitch-videoad.js text/javascript
                 if (!document.hidden) setTimeout(monitorPlayerBuffering, 100);
             });
         }
-        // Visibility-aware backoff: poll 5x slower when tab is hidden (but NOT during PiP — user is still watching)
+        // Visibility-aware backoff: poll 3x slower when tab is hidden (but NOT during PiP — user is still watching)
         const shouldThrottle = typeof document !== 'undefined' && document.hidden && !document.pictureInPictureElement;
-        const nextDelay = shouldThrottle ? PlayerBufferingDelay * 5 : PlayerBufferingDelay;
+        const nextDelay = shouldThrottle ? PlayerBufferingDelay * 3 : PlayerBufferingDelay;
         setTimeout(monitorPlayerBuffering, nextDelay);
     }
     function updateAdblockBanner(data) {
