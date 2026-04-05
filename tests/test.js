@@ -161,8 +161,20 @@ function stripAdSegments(textStr, stripAllSegments, streamInfo) {
     }
     if (liveSegments.length > 0) {
         streamInfo.RecoverySegments = liveSegments.slice(-6);
+        const seq = parseInt((textStr.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/) || [])[1]);
+        if (!isNaN(seq)) {
+            streamInfo.RecoveryStartSeq = seq + Math.max(0, liveSegments.length - streamInfo.RecoverySegments.length);
+        }
     }
     if (hasStrippedAdSegments && liveSegments.length === 0 && streamInfo.RecoverySegments && streamInfo.RecoverySegments.length > 0) {
+        if (streamInfo.RecoveryStartSeq !== undefined) {
+            for (let j = 0; j < lines.length; j++) {
+                if (lines[j].startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+                    lines[j] = '#EXT-X-MEDIA-SEQUENCE:' + streamInfo.RecoveryStartSeq;
+                    break;
+                }
+            }
+        }
         for (let j = 0; j < streamInfo.RecoverySegments.length; j++) {
             lines.push(streamInfo.RecoverySegments[j].extinf);
             lines.push(streamInfo.RecoverySegments[j].url);
@@ -395,6 +407,34 @@ streamInfo = {
 result = stripAdSegments(allAdM3u8, false, streamInfo);
 assert(result.includes('https://recovery-1.ts'), 'restores recovery segment 1');
 assert(result.includes('https://recovery-2.ts'), 'restores recovery segment 2');
+
+// Test: MEDIA-SEQUENCE is rewritten on recovery injection
+AdSegmentCache = new Map();
+const playlistWithSeq = [
+    '#EXTM3U',
+    '#EXT-X-MEDIA-SEQUENCE:100',
+    '#EXTINF:2.000,live',
+    'https://s100.ts',
+    '#EXTINF:2.000,live',
+    'https://s101.ts',
+    '#EXTINF:2.000,live',
+    'https://s102.ts',
+].join('\n');
+// Cache phase: all 3 live segments, MEDIA-SEQUENCE=100 → RecoveryStartSeq = 100
+streamInfo = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false, RecoverySegments: [] };
+stripAdSegments(playlistWithSeq, false, streamInfo);
+assertEq(streamInfo.RecoveryStartSeq, 100, 'captures RecoveryStartSeq at cache time');
+// Injection phase: ads-only playlist with MEDIA-SEQUENCE=200 → should rewrite to 100
+AdSegmentCache = new Map();
+const adOnlyWithSeq = [
+    '#EXTM3U',
+    '#EXT-X-MEDIA-SEQUENCE:200',
+    '#EXTINF:2.000,stitched-ad',
+    'https://ad.ts',
+].join('\n');
+result = stripAdSegments(adOnlyWithSeq, false, streamInfo);
+assert(result.includes('#EXT-X-MEDIA-SEQUENCE:100'), 'rewrites MEDIA-SEQUENCE to match recovery segments');
+assert(!result.includes('#EXT-X-MEDIA-SEQUENCE:200'), 'replaces original MEDIA-SEQUENCE');
 
 // Test: stripAllSegments mode
 AdSegmentCache = new Map();

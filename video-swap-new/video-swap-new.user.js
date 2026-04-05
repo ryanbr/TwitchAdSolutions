@@ -411,13 +411,26 @@
         } else {
             streamInfo.NumStrippedAdSegments = 0;
         }
-        // Cache live segments for recovery
+        // Cache live segments for recovery (plus the MEDIA-SEQUENCE of the oldest cached segment,
+        // so the player accepts injected recovery segments as the correct position in the stream)
         if (liveSegments.length > 0) {
             streamInfo.RecoverySegments = liveSegments.slice(-6);
+            const seq = parseInt((textStr.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/) || [])[1]);
+            if (!isNaN(seq)) {
+                streamInfo.RecoveryStartSeq = seq + Math.max(0, liveSegments.length - streamInfo.RecoverySegments.length);
+            }
         }
         // If all segments were stripped, restore cached recovery segments to prevent black screen
         if (hasStrippedAdSegments && liveSegments.length === 0 && streamInfo.RecoverySegments && streamInfo.RecoverySegments.length > 0) {
             console.log('[AD DEBUG] All segments stripped — restoring ' + streamInfo.RecoverySegments.length + ' recovery segments');
+            if (streamInfo.RecoveryStartSeq !== undefined) {
+                for (let j = 0; j < lines.length; j++) {
+                    if (lines[j].startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+                        lines[j] = '#EXT-X-MEDIA-SEQUENCE:' + streamInfo.RecoveryStartSeq;
+                        break;
+                    }
+                }
+            }
             for (let j = 0; j < streamInfo.RecoverySegments.length; j++) {
                 lines.push(streamInfo.RecoverySegments[j].extinf);
                 lines.push(streamInfo.RecoverySegments[j].url);
