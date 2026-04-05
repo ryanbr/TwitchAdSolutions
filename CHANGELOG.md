@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Ad Detection
+- Add maf-ad ID signifier
+- Add twitch-stream-source, twitch-trigger, twitch-maf-ad, twitch-ad-quartile DATERANGE class signifiers (adopted from uBO playlist replace rule)
+
 ### Debug Logging
 - Detect and log CSAI (client-side ad insertion) requests via fetch, XHR, and DOM injection
 - Monitor for non-Twitch video elements to identify ad delivery paths

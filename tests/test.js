@@ -34,7 +34,7 @@ function assertDeepEq(actual, expected, message) {
 // ============================================================
 // Mock globals
 // ============================================================
-const AdSignifiers = ['stitched', 'stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'SCTE35-OUT'];
+const AdSignifiers = ['stitched', 'stitched-ad', 'maf-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'EXT-X-DATERANGE:CLASS="twitch-stream-source"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-ad-quartile"', 'SCTE35-OUT'];
 const AdSegmentURLPatterns = ['/adsquared/', '/_404/', '/processing'];
 let AdSegmentCache = new Map();
 let AllSegmentsAreAdSegments = false;
@@ -200,6 +200,11 @@ assertDeepEq(getMatchedAdSignifiers('stitched-ad segment with X-TV-TWITCH-AD'), 
 assertDeepEq(getMatchedAdSignifiers('#EXT-X-CUE-OUT:DURATION=30'), ['EXT-X-CUE-OUT'], 'matches single CUE-OUT');
 assertDeepEq(getMatchedAdSignifiers('normal content'), [], 'no matches on clean content');
 assertDeepEq(getMatchedAdSignifiers('SCTE35-OUT marker'), ['SCTE35-OUT'], 'matches SCTE35-OUT');
+assert(hasAdTags('maf-ad segment') === true, 'detects maf-ad');
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-stream-source"') === true, 'detects twitch-stream-source');
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-trigger"') === true, 'detects twitch-trigger');
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-maf-ad"') === true, 'detects twitch-maf-ad');
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-ad-quartile"') === true, 'detects twitch-ad-quartile');
 
 // ============================================================
 // Test: parseAttributes
