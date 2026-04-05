@@ -6,7 +6,7 @@ Comparison of ryanbr/TwitchAdSolutions (release & testing) vs GosuDRM/TTV-AB 5.0
 
 | Feature | Release | Testing | TTV-AB | pixeltris |
 |---|---|---|---|---|
-| Multiple ad signifiers | Yes (6) | Yes (6) | Yes (6 + URL patterns) | No (1) |
+| Multiple ad signifiers | Yes (11) | Yes (11) | Yes (6 + URL patterns) | No (1) |
 | SCTE-35 CUE-OUT/CUE-IN | Yes | Yes | Yes | No |
 | Ad segment URL patterns | Yes | Yes | Yes | No |
 

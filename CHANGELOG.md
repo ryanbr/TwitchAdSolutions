@@ -1,16 +1,18 @@
 ## Unreleased
 
+## v46.0.0
+
 ### Ad Detection
 - Add maf-ad ID signifier
 - Add twitch-stream-source, twitch-trigger, twitch-maf-ad, twitch-ad-quartile DATERANGE class signifiers (adopted from uBO playlist replace rule)
+- Generalize X-TV-TWITCH-AD-*-URL rewrite regex to catch all ad beacon attributes (quartile, impression, etc.)
+
+### Bug Fixes
+- Fix recovery segment injection to rewrite EXT-X-MEDIA-SEQUENCE header (prevents player from replaying seen content or rejecting stale segments)
 
 ### Debug Logging
 - Detect and log CSAI (client-side ad insertion) requests via fetch, XHR
-
-### Testing
-- Generalize X-TV-TWITCH-AD-*-URL rewrite regex to catch all ad beacon attributes (quartile, impression, etc.)
 - Log ad tracking attribute names seen per stream (helps identify new beacon types)
-- Fix recovery segment injection to rewrite EXT-X-MEDIA-SEQUENCE header (prevents player from replaying seen content or rejecting stale segments)
 
 ## v45.0.0
 
