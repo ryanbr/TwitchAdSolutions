@@ -39,6 +39,7 @@
         scope.AlwaysReloadPlayerOnAd = false;// Always pause/play when entering/leaving ads
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
         scope.ReloadCooldownSeconds = 30;// Minimum seconds between reloads — breaks CSAI cascades triggered by reload
+        scope.DisableReloadCap = false;// If true, buffer monitor reloads unlimited times (pre-v47 behavior, risk of cascade)
         scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
@@ -163,6 +164,7 @@
                     declareOptions(self);
                     ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};
                     ReloadCooldownSeconds = ${ReloadCooldownSeconds};
+                    DisableReloadCap = ${DisableReloadCap};
                     PinBackupPlayerType = ${PinBackupPlayerType};
                     ForceAccessTokenPlayerType = '${ForceAccessTokenPlayerType}';
                     GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
@@ -864,6 +866,8 @@
                               playerBufferState.channelName = channelName;
                               playerBufferState.hasStreamStarted = false;
                               playerBufferState.numSame = 0;
+                              playerBufferState.fixAttempts = 0;
+                              playerBufferState.recoveryReloadUsed = false;
                               //console.log('Channel changed to ' + channelName);
                           }
                       }
@@ -887,8 +891,12 @@
                             playerBufferState.numSame++;
                             if (playerBufferState.numSame == PlayerBufferingSameStateCount) {
                                 playerBufferState.fixAttempts++;
-                                const escalateToReload = playerBufferState.fixAttempts >= 3;
-                                console.log('Attempt to fix buffering position:' + playerBufferState.position + ' bufferedPosition:' + playerBufferState.bufferedPosition + ' bufferDuration:' + playerBufferState.bufferDuration + (escalateToReload ? ' (escalating to reload)' : ''));
+                                // Cap: at most ONE reload per recovery window. After reloading once,
+                                // stay on pause/play until playback recovers. Prevents reload cascades.
+                                const wouldEscalate = playerBufferState.fixAttempts >= 3;
+                                const escalateToReload = wouldEscalate && (DisableReloadCap || !playerBufferState.recoveryReloadUsed);
+                                const reloadCapNote = wouldEscalate && !escalateToReload ? ' (reload cap reached, pause/play only — set twitchAdSolutions_disableReloadCap=true to bypass)' : (escalateToReload ? ' (escalating to reload)' : '');
+                                console.log('Attempt to fix buffering position:' + playerBufferState.position + ' bufferedPosition:' + playerBufferState.bufferedPosition + ' bufferDuration:' + playerBufferState.bufferDuration + reloadCapNote);
                                 const isPausePlay = escalateToReload ? false : !PlayerBufferingDoPlayerReload;
                                 const isReload = escalateToReload ? true : PlayerBufferingDoPlayerReload;
                                 doTwitchPlayerTask(isPausePlay, isReload);
@@ -896,11 +904,13 @@
                                 playerBufferState.numSame = 0;
                                 if (escalateToReload) {
                                     playerBufferState.fixAttempts = 0;
+                                    playerBufferState.recoveryReloadUsed = true;
                                 }
                             }
                         } else {
                             playerBufferState.numSame = 0;
                             playerBufferState.fixAttempts = 0;
+                            playerBufferState.recoveryReloadUsed = false;
                         }
                         playerBufferState.position = position;
                         playerBufferState.bufferedPosition = bufferedPosition;
@@ -930,7 +940,17 @@
             });
         }
         playerBufferState.isLive = isLive;
-        setTimeout(monitorPlayerBuffering, PlayerBufferingDelay);
+        // Force immediate tick when tab becomes visible so stalls are caught fast on return
+        if (typeof document !== 'undefined' && !monitorPlayerBuffering.visibilityHooked) {
+            monitorPlayerBuffering.visibilityHooked = true;
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) setTimeout(monitorPlayerBuffering, 100);
+            });
+        }
+        // Visibility-aware backoff: poll 5x slower when tab is hidden (but NOT during PiP — user is still watching)
+        const shouldThrottle = typeof document !== 'undefined' && document.hidden && !document.pictureInPictureElement;
+        const nextDelay = shouldThrottle ? PlayerBufferingDelay * 5 : PlayerBufferingDelay;
+        setTimeout(monitorPlayerBuffering, nextDelay);
     }
     function updateAdblockBanner(data) {
         if (!cachedPlayerRootDiv || !cachedPlayerRootDiv.isConnected) {
@@ -1290,6 +1310,10 @@
         const lsReloadCooldown = parseInt(localStorage.getItem('twitchAdSolutions_reloadCooldownSeconds'));
         if (!isNaN(lsReloadCooldown) && lsReloadCooldown >= 0) {
             ReloadCooldownSeconds = lsReloadCooldown;
+        }
+        const lsDisableReloadCap = localStorage.getItem('twitchAdSolutions_disableReloadCap');
+        if (lsDisableReloadCap !== null) {
+            DisableReloadCap = lsDisableReloadCap === 'true';
         }
         const lsPlayerType = localStorage.getItem('twitchAdSolutions_playerType');
         if (lsPlayerType !== null) {
