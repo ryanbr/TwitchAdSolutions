@@ -664,7 +664,11 @@
                                         break;
                                     }
                                     if (hasAdTags(m3u8Text)) {
-                                        console.log('[AD DEBUG] Backup stream (' + playerType + ') also has ads');
+                                        if (!streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType = new Set();
+                                        if (!streamInfo.LoggedBackupAdsByType.has(playerType)) {
+                                            streamInfo.LoggedBackupAdsByType.add(playerType);
+                                            console.log('[AD DEBUG] Backup stream (' + playerType + ') also has ads');
+                                        }
                                     }
                                     if (isFullyCachedPlayerType) {
                                         break;
@@ -719,6 +723,7 @@
             streamInfo.ActiveBackupPlayerType = null;
             streamInfo.RequestedAds.clear();
             streamInfo.FailedBackupPlayerTypes.clear();
+            if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
             if (streamInfo.IsUsingModifiedM3U8 || ReloadPlayerAfterAd) {
                 streamInfo.IsUsingModifiedM3U8 = false;
                 streamInfo.LastPlayerReload = Date.now();
@@ -971,7 +976,10 @@
         }
         const reactRootNode = findReactRootNode();
         if (!reactRootNode) {
-            console.log('[AD DEBUG] React root node not found — Twitch may have changed their React setup');
+            if (!getPlayerAndState.loggedNoRoot) {
+                getPlayerAndState.loggedNoRoot = true;
+                console.log('[AD DEBUG] React root node not found — Twitch may have changed their React setup');
+            }
             return null;
         }
         let player = findReactNode(reactRootNode, node => node.setPlayerActive && node.props && node.props.mediaPlayerInstance);
@@ -980,10 +988,12 @@
             player = player.playerInstance;
         }
         const playerState = findReactNode(reactRootNode, node => node.setSrc && node.setInitialPlaybackSettings);
-        if (!player) {
+        if (!player && !getPlayerAndState.loggedNoPlayer) {
+            getPlayerAndState.loggedNoPlayer = true;
             console.log('[AD DEBUG] Player not found — Twitch may have renamed setPlayerActive/mediaPlayerInstance');
         }
-        if (!playerState) {
+        if (!playerState && !getPlayerAndState.loggedNoState) {
+            getPlayerAndState.loggedNoState = true;
             console.log('[AD DEBUG] Player state not found — Twitch may have renamed setSrc/setInitialPlaybackSettings');
         }
         return  {
