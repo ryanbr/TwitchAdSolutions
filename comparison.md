@@ -38,6 +38,8 @@ Comparison of ryanbr/TwitchAdSolutions (release & testing) vs GosuDRM/TTV-AB 5.0
 | Tab focus auto-play | Yes | Yes | Yes | Muted only |
 | Auto-resume on tab return | Yes (muted+unmuted) | Yes (muted+unmuted) | Yes | Muted only |
 | Buffering monitor | Yes | Yes | Yes | Yes |
+| Stuck-pause auto-recovery | Yes | Yes | No | No |
+| CSAI cascade reload cooldown | Yes | Yes | No | No |
 | Quality/volume restore | Yes | Yes | Yes | Yes |
 | Playback intent tracking | No | No | Yes | No |
 | Stale event filtering | No | No | Yes | No |
@@ -51,6 +53,7 @@ Comparison of ryanbr/TwitchAdSolutions (release & testing) vs GosuDRM/TTV-AB 5.0
 | ForceAccessTokenPlayerType | Yes | Yes | N/A | Hardcoded |
 | PinBackupPlayerType | Yes | Yes | Always on | No |
 | HideAdOverlay | Yes | Yes | N/A | No |
+| ReloadCooldownSeconds | Yes | Yes | N/A | No |
 | Config logged on load | Yes | Yes | No | No |
 
 ## Debug Logging

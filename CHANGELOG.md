@@ -1,5 +1,18 @@
 ## Unreleased
 
+## v47.0.0
+
+### Player Stability
+- Retry play() within 10s window after stuck pause/play cycle in buffer monitor (auto-recovers from player stuck paused after ad-state interference)
+- Add reload cooldown to break CSAI cascades (skip reload if last reload was <30s ago and no backup stream was used)
+
+### Configuration
+- Add twitchAdSolutions_reloadCooldownSeconds localStorage option (default 30, 0 to disable)
+
+### Debug Logging
+- Dedupe 'Backup stream (X) also has ads' log to once per player type per ad break
+- Dedupe 'React root node / player not found' logs to once per page load (silences m.twitch.tv console spam)
+
 ## v46.0.0
 
 ### Ad Detection
