@@ -28,6 +28,7 @@ twitch-videoad.js text/javascript
         scope.AlwaysReloadPlayerOnAd = false;// Always pause/play when entering/leaving ads
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
         scope.ReloadCooldownSeconds = 30;// Minimum seconds between reloads — breaks CSAI cascades triggered by reload
+        scope.DisableReloadCap = false;// If true, buffer monitor reloads unlimited times (pre-v47 behavior, risk of cascade)
         scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
@@ -152,6 +153,7 @@ twitch-videoad.js text/javascript
                     declareOptions(self);
                     ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};
                     ReloadCooldownSeconds = ${ReloadCooldownSeconds};
+                    DisableReloadCap = ${DisableReloadCap};
                     PinBackupPlayerType = ${PinBackupPlayerType};
                     ForceAccessTokenPlayerType = '${ForceAccessTokenPlayerType}';
                     GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
@@ -892,8 +894,8 @@ twitch-videoad.js text/javascript
                                 // Cap: at most ONE reload per recovery window. After reloading once,
                                 // stay on pause/play until playback recovers. Prevents reload cascades.
                                 const wouldEscalate = playerBufferState.fixAttempts >= 3;
-                                const escalateToReload = wouldEscalate && !playerBufferState.recoveryReloadUsed;
-                                const reloadCapNote = wouldEscalate && !escalateToReload ? ' (reload cap reached, pause/play only)' : (escalateToReload ? ' (escalating to reload)' : '');
+                                const escalateToReload = wouldEscalate && (DisableReloadCap || !playerBufferState.recoveryReloadUsed);
+                                const reloadCapNote = wouldEscalate && !escalateToReload ? ' (reload cap reached, pause/play only — set twitchAdSolutions_disableReloadCap=true to bypass)' : (escalateToReload ? ' (escalating to reload)' : '');
                                 console.log('Attempt to fix buffering position:' + playerBufferState.position + ' bufferedPosition:' + playerBufferState.bufferedPosition + ' bufferDuration:' + playerBufferState.bufferDuration + reloadCapNote);
                                 const isPausePlay = escalateToReload ? false : !PlayerBufferingDoPlayerReload;
                                 const isReload = escalateToReload ? true : PlayerBufferingDoPlayerReload;
@@ -1319,6 +1321,10 @@ twitch-videoad.js text/javascript
         const lsReloadCooldown = parseInt(localStorage.getItem('twitchAdSolutions_reloadCooldownSeconds'));
         if (!isNaN(lsReloadCooldown) && lsReloadCooldown >= 0) {
             ReloadCooldownSeconds = lsReloadCooldown;
+        }
+        const lsDisableReloadCap = localStorage.getItem('twitchAdSolutions_disableReloadCap');
+        if (lsDisableReloadCap !== null) {
+            DisableReloadCap = lsDisableReloadCap === 'true';
         }
         const lsPlayerType = localStorage.getItem('twitchAdSolutions_playerType');
         if (lsPlayerType !== null) {
