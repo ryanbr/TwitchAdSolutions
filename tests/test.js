@@ -130,8 +130,7 @@ function stripAdSegments(textStr, stripAllSegments, streamInfo) {
             inCueOut = false;
         }
         lines[i] = line
-            .replaceAll(/(X-TV-TWITCH-AD-URL=")(?:[^"]*)(")/g, `$1${newAdUrl}$2`)
-            .replaceAll(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")(?:[^"]*)(")/g, `$1${newAdUrl}$2`);
+            .replaceAll(/(X-TV-TWITCH-AD(?:-[A-Z]+)*-URLS?=")[^"]*(")/g, `$1${newAdUrl}$2`);
         if (i < lines.length - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAllSegments || AllSegmentsAreAdSegments || inCueOut)) {
             const segmentUrl = lines[i + 1];
             if (!AdSegmentCache.has(segmentUrl)) {
@@ -367,12 +366,18 @@ const trackingM3u8 = [
     'https://ad.ts',
     'X-TV-TWITCH-AD-URL="https://tracking.example.com"',
     'X-TV-TWITCH-AD-CLICK-TRACKING-URL="https://click.example.com"',
+    'X-TV-TWITCH-AD-FIRST-QUARTILE-URL="https://q1.example.com"',
+    'X-TV-TWITCH-AD-IMPRESSION-URLS="https://imp.example.com"',
+    'X-TV-TWITCH-AD-COMMERCIAL-ID="abc123"',
 ].join('\n');
 
 streamInfo = { NumStrippedAdSegments: 0, IsStrippingAdSegments: false, RecoverySegments: [] };
 result = stripAdSegments(trackingM3u8, false, streamInfo);
 assert(result.includes('X-TV-TWITCH-AD-URL="https://twitch.tv"'), 'replaces ad URL with twitch.tv');
 assert(result.includes('X-TV-TWITCH-AD-CLICK-TRACKING-URL="https://twitch.tv"'), 'replaces click tracking URL');
+assert(result.includes('X-TV-TWITCH-AD-FIRST-QUARTILE-URL="https://twitch.tv"'), 'replaces quartile URL');
+assert(result.includes('X-TV-TWITCH-AD-IMPRESSION-URLS="https://twitch.tv"'), 'replaces impression URLS (plural)');
+assert(result.includes('X-TV-TWITCH-AD-COMMERCIAL-ID="abc123"'), 'leaves non-URL attributes alone');
 
 // Test: recovery segments restore when all stripped
 AdSegmentCache = new Map();

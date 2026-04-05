@@ -352,6 +352,14 @@ twitch-videoad.js text/javascript
         const liveSegments = [];
         const lines = textStr.replaceAll('\r', '').split('\n');
         const newAdUrl = 'https://twitch.tv';
+        // Log ad tracking attribute names once per stream (helps identify new beacons)
+        if (!streamInfo.HasLoggedAdAttributes) {
+            const adAttrs = textStr.match(/X-TV-TWITCH-AD[A-Z-]*(?==")/g);
+            if (adAttrs && adAttrs.length > 0) {
+                streamInfo.HasLoggedAdAttributes = true;
+                console.log('[AD DEBUG] Ad tracking attributes seen: ' + [...new Set(adAttrs)].join(', '));
+            }
+        }
         for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
             // Track SCTE-35 CUE-OUT/CUE-IN ad boundaries
@@ -368,8 +376,7 @@ twitch-videoad.js text/javascript
             }
             // Remove tracking urls which appear in the overlay UI
             lines[i] = line
-                .replaceAll(/(X-TV-TWITCH-AD-URL=")(?:[^"]*)(")/g, `$1${newAdUrl}$2`)
-                .replaceAll(/(X-TV-TWITCH-AD-CLICK-TRACKING-URL=")(?:[^"]*)(")/g, `$1${newAdUrl}$2`);
+                .replaceAll(/(X-TV-TWITCH-AD(?:-[A-Z]+)*-URLS?=")[^"]*(")/g, `$1${newAdUrl}$2`);
             if (i < lines.length - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAllSegments || AllSegmentsAreAdSegments || inCueOut)) {
                 const segmentUrl = lines[i + 1];
                 if (!AdSegmentCache.has(segmentUrl)) {
