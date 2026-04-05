@@ -7,6 +7,11 @@
 ### Debug Logging
 - Detect and log CSAI (client-side ad insertion) requests via fetch, XHR
 
+### Testing
+- Generalize X-TV-TWITCH-AD-*-URL rewrite regex to catch all ad beacon attributes (quartile, impression, etc.)
+- Log ad tracking attribute names seen per stream (helps identify new beacon types)
+- Fix recovery segment injection to rewrite EXT-X-MEDIA-SEQUENCE header (prevents player from replaying seen content or rejecting stale segments)
+
 ## v45.0.0
 
 ### Player Stability
