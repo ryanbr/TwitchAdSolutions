@@ -266,11 +266,19 @@
         });
     }
     function getWasmWorkerJs(twitchBlobUrl) {
+        if (!getWasmWorkerJs.cache) {
+            getWasmWorkerJs.cache = Object.create(null);
+        }
+        if (getWasmWorkerJs.cache[twitchBlobUrl]) {
+            return getWasmWorkerJs.cache[twitchBlobUrl];
+        }
         const req = new XMLHttpRequest();
         req.open('GET', twitchBlobUrl, false);
         req.overrideMimeType("text/javascript");
         req.send();
-        return req.responseText;
+        const text = req.responseText;
+        getWasmWorkerJs.cache[twitchBlobUrl] = text;
+        return text;
     }
     // Hook fetch() in the worker scope to intercept m3u8 playlist requests and ad segments
     function hookWorkerFetch() {
