@@ -466,23 +466,35 @@ twitch-videoad.js text/javascript
                 const streamM3u8 = await streamM3u8Response.text();
                 if (streamM3u8 != null) {
                     if (!hasAdTags(streamM3u8) && SimulatedAdsDepth == 0) {
-                        console.log('No more ads on main stream. ' + (ReloadPlayerAfterAd ? 'Triggering player reload to go back to main stream...' : 'Resuming playback...'));
-                        streamInfo.IsMovingOffBackupEncodings = true;
-                        streamInfo.BackupEncodings = null;
-                        streamInfo.BackupEncodingsStatus.clear();
-                        streamInfo.BackupEncodingsPlayerTypeIndex = -1;
-                        postMessage({key: ReloadPlayerAfterAd ? 'UboReloadPlayer' : 'UboPauseResumePlayer'});
-                    } else if (!streamM3u8.includes('"MIDROLL"') && !streamM3u8.includes('"midroll"')) {
-                        const lines = streamM3u8.replaceAll('\r', '').split('\n');
-                        for (let i = 0; i < lines.length; i++) {
-                            const line = lines[i];
-                            if (line.startsWith('#EXTINF') && lines.length > i + 1) {
-                                if (!line.includes(LIVE_SIGNIFIER) && !streamInfo.RequestedAds.has(lines[i + 1])) {
-                                    // Only request one .ts file per .m3u8 request to avoid making too many requests
-                                    //console.log('Fetch ad .ts file');
-                                    streamInfo.RequestedAds.add(lines[i + 1]);
-                                    fetch(lines[i + 1]).then((response)=>{response.blob()});
-                                    break;
+                        streamInfo.CleanPlaylistCount++;
+                        // Check if the current playlist has live segments — if not, backup stream is dead
+                        const hasLiveSegments = textStr.includes(LIVE_SIGNIFIER);
+                        if (streamInfo.CleanPlaylistCount >= 2 || !hasLiveSegments) {
+                            if (!hasLiveSegments) {
+                                console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
+                            }
+                            console.log('No more ads on main stream. ' + (ReloadPlayerAfterAd ? 'Triggering player reload to go back to main stream...' : 'Resuming playback...'));
+                            streamInfo.IsMovingOffBackupEncodings = true;
+                            streamInfo.BackupEncodings = null;
+                            streamInfo.BackupEncodingsStatus.clear();
+                            streamInfo.BackupEncodingsPlayerTypeIndex = -1;
+                            streamInfo.CleanPlaylistCount = 0;
+                            postMessage({key: ReloadPlayerAfterAd ? 'UboReloadPlayer' : 'UboPauseResumePlayer'});
+                        }
+                    } else {
+                        streamInfo.CleanPlaylistCount = 0;
+                        if (!streamM3u8.includes('"MIDROLL"') && !streamM3u8.includes('"midroll"')) {
+                            const lines = streamM3u8.replaceAll('\r', '').split('\n');
+                            for (let i = 0; i < lines.length; i++) {
+                                const line = lines[i];
+                                if (line.startsWith('#EXTINF') && lines.length > i + 1) {
+                                    if (!line.includes(LIVE_SIGNIFIER) && !streamInfo.RequestedAds.has(lines[i + 1])) {
+                                        // Only request one .ts file per .m3u8 request to avoid making too many requests
+                                        //console.log('Fetch ad .ts file');
+                                        streamInfo.RequestedAds.add(lines[i + 1]);
+                                        fetch(lines[i + 1]).then((response)=>{response.blob()});
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -570,6 +582,7 @@ twitch-videoad.js text/javascript
                                 IsStrippingAdSegments: false,
                                 NumStrippedAdSegments: 0,
                                 RecoverySegments: [],
+                                CleanPlaylistCount: 0,
                                 UseFallbackStream: false,
                                 ChannelName: channelName,
                                 UsherParams: (new URL(url)).search,
