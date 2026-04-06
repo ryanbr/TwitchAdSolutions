@@ -29,6 +29,7 @@ twitch-videoad.js text/javascript
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
         scope.ReloadCooldownSeconds = 30;// Minimum seconds between reloads — breaks CSAI cascades triggered by reload
         scope.DisableReloadCap = false;// If true, buffer monitor reloads unlimited times (pre-v47 behavior, risk of cascade)
+        scope.DriftCorrectionRate = 1.1;// Playback rate for catching up to live edge after reload (0 = disable drift correction)
         scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
@@ -838,6 +839,7 @@ twitch-videoad.js text/javascript
         });
     }
     let playerForMonitoringBuffering = null;
+    let driftCatchUpInterval = null;
     const playerBufferState = {
         channelName: null,
         hasStreamStarted: false,
@@ -1127,13 +1129,28 @@ twitch-videoad.js text/javascript
                         if (videos.length > 0 && videos[0].muted) {
                             videos[0].muted = false;
                         }
-                        // Correct live drift after reload
-                        if (videos.length > 0 && videos[0].buffered.length > 0 && videos[0].readyState >= 3) {
+                        // Correct live drift after reload — gradual catch-up via playback rate instead of jarring seek
+                        if (videos.length > 0 && videos[0].buffered.length > 0 && videos[0].readyState >= 3 && DriftCorrectionRate > 1) {
                             const liveEdge = videos[0].buffered.end(videos[0].buffered.length - 1);
                             const drift = liveEdge - videos[0].currentTime;
                             if (drift > 2) {
-                                console.log('[AD DEBUG] Post-reload live drift correction: ' + drift.toFixed(1) + 's behind');
-                                videos[0].currentTime = liveEdge - 0.5;
+                                console.log('[AD DEBUG] Post-reload live drift correction: ' + drift.toFixed(1) + 's behind — catching up at ' + DriftCorrectionRate + 'x');
+                                if (driftCatchUpInterval) clearInterval(driftCatchUpInterval);
+                                videos[0].playbackRate = DriftCorrectionRate;
+                                driftCatchUpInterval = setInterval(() => {
+                                    try {
+                                        const vid = document.querySelector('video');
+                                        if (vid && vid.buffered.length > 0) {
+                                            const remaining = vid.buffered.end(vid.buffered.length - 1) - vid.currentTime;
+                                            if (remaining <= 1) {
+                                                vid.playbackRate = 1.0;
+                                                clearInterval(driftCatchUpInterval);
+                                                driftCatchUpInterval = null;
+                                            }
+                                        }
+                                    } catch { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
+                                }, 500);
+                                setTimeout(() => { try { videos[0].playbackRate = 1.0; } catch {} if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; } }, 30000);
                             }
                         }
                     } catch {}
@@ -1329,6 +1346,10 @@ twitch-videoad.js text/javascript
         const lsDisableReloadCap = localStorage.getItem('twitchAdSolutions_disableReloadCap');
         if (lsDisableReloadCap !== null) {
             DisableReloadCap = lsDisableReloadCap === 'true';
+        }
+        const lsDriftRate = parseFloat(localStorage.getItem('twitchAdSolutions_driftCorrectionRate'));
+        if (!isNaN(lsDriftRate) && lsDriftRate >= 0) {
+            DriftCorrectionRate = lsDriftRate;
         }
         const lsPlayerType = localStorage.getItem('twitchAdSolutions_playerType');
         if (lsPlayerType !== null) {
