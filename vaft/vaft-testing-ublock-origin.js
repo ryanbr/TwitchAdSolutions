@@ -760,11 +760,13 @@ twitch-videoad.js text/javascript
                 const effectiveCooldown = recentReloads >= 3 ? ReloadCooldownSeconds * 3 : ReloadCooldownSeconds;
                 const tooSoonSinceLastReload = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < (effectiveCooldown * 1000);
                 // CSAI-only ad break: backup was used but no segments were stripped.
-                // Clear backup state without reload — avoids CSAI cascade on ad-heavy channels.
+                // Skip reload entirely — avoids CSAI cascade on ad-heavy channels.
+                // Clearing the flag makes next m3u8 poll serve main stream seamlessly.
                 if (streamInfo.IsUsingModifiedM3U8 && !hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without reload');
                     streamInfo.IsUsingModifiedM3U8 = false;
-                }
+                    postMessage({ key: 'PauseResumePlayer' });
+                } else {
                 // Reload if backup was used AND segments were stripped (need clean state). Otherwise, respect ReloadPlayerAfterAd + cooldown.
                 const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && (hadStrippedSegments || !tooSoonSinceLastReload));
                 if (shouldReload) {
@@ -782,6 +784,7 @@ twitch-videoad.js text/javascript
                         key: 'PauseResumePlayer'
                     });
                 }
+                }// end else (non-CSAI path)
             }
         }
         postMessage({
