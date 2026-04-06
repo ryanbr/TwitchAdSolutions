@@ -1008,6 +1008,7 @@
                 }
             } catch {}
             playerBufferState.lastReloadAt = Date.now();
+            playerForMonitoringBuffering = null;// Force re-acquire player ref after reload — old ref reads stale buffer state
             console.log('Reloading Twitch player');
             playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
             postTwitchWorkerMessage('TriggeredPlayerReload');
