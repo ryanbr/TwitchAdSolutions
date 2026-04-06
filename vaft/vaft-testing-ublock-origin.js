@@ -884,6 +884,7 @@ twitch-videoad.js text/javascript
                               playerBufferState.numSame = 0;
                               playerBufferState.fixAttempts = 0;
                               playerBufferState.recoveryReloadUsed = false;
+                              playerBufferState.userPauseIntent = false;
                               //console.log('Channel changed to ' + channelName);
                           }
                       }
@@ -947,6 +948,19 @@ twitch-videoad.js text/javascript
                     player: playerAndState.player,
                     state: playerAndState.state
                 };
+                // Track user pause intent on the video element
+                const video = playerAndState.player.getHTMLVideoElement?.();
+                if (video && !video.__tasIntentHooked) {
+                    video.__tasIntentHooked = true;
+                    video.addEventListener('pause', () => {
+                        if (!playerBufferState.weJustPaused || (Date.now() - playerBufferState.weJustPaused) > 2000) {
+                            playerBufferState.userPauseIntent = true;
+                        }
+                    });
+                    video.addEventListener('play', () => {
+                        playerBufferState.userPauseIntent = false;
+                    });
+                }
             }
         }
         const isLive = playerForMonitoringBuffering?.state?.props?.content?.type === 'live';
@@ -1069,6 +1083,10 @@ twitch-videoad.js text/javascript
         const wasPaused = player.isPaused() || player.core?.paused;
         // Only block pause/play toggle if already paused — still allow reloads
         if (isPausePlay && wasPaused) {
+            // User deliberately paused — respect their intent, don't auto-resume
+            if (playerBufferState.userPauseIntent) {
+                return;
+            }
             // If WE recently called pause/play and player is still paused, retry play (stuck from autoplay policy or ad-state interference)
             if (playerBufferState.weJustPaused && (Date.now() - playerBufferState.weJustPaused) < 10000) {
                 try { player.play(); } catch {}
@@ -1106,6 +1124,7 @@ twitch-videoad.js text/javascript
                 }
             } catch {}
             playerBufferState.lastReloadAt = Date.now();
+            playerBufferState.userPauseIntent = false;
             playerForMonitoringBuffering = null;// Force re-acquire player ref after reload — old ref reads stale buffer state
             console.log('Reloading Twitch player');
             playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
