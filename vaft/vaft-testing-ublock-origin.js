@@ -955,7 +955,10 @@ twitch-videoad.js text/javascript
         if (typeof document !== 'undefined' && !monitorPlayerBuffering.visibilityHooked) {
             monitorPlayerBuffering.visibilityHooked = true;
             document.addEventListener('visibilitychange', () => {
-                if (!document.hidden) setTimeout(monitorPlayerBuffering, 100);
+                if (!document.hidden && !monitorPlayerBuffering.pendingTick) {
+                    monitorPlayerBuffering.pendingTick = true;
+                    setTimeout(() => { monitorPlayerBuffering.pendingTick = false; monitorPlayerBuffering(); }, 100);
+                }
             });
         }
         // Visibility-aware backoff: poll 3x slower when tab is hidden (but NOT during PiP — user is still watching)
