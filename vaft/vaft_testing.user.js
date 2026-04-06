@@ -206,6 +206,11 @@
                 this.addEventListener('message', (e) => {
                     if (e.data.key == 'UpdateAdBlockBanner') {
                         updateAdblockBanner(e.data);
+                        // Track when ads first appear (proxy for backup stream switch)
+                        if (e.data.hasAds && !playerBufferState.inAdBreak) {
+                            playerBufferState.lastBackupSwitchAt = Date.now();
+                        }
+                        playerBufferState.inAdBreak = !!e.data.hasAds;
                     } else if (e.data.key == 'PauseResumePlayer') {
                         doTwitchPlayerTask(true, false);
                     } else if (e.data.key == 'ReloadPlayer') {
@@ -641,7 +646,6 @@
             if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
             // Auto-escalate cooldown: if 3+ reloads in last 2 min, triple the cooldown to reduce cascade pressure
             if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
-            streamInfo.ReloadTimestamps.push(Date.now());
             streamInfo.ReloadTimestamps = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000);
             const recentReloads = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 120000).length;
             const effectiveCooldown = recentReloads >= 3 ? ReloadCooldownSeconds * 3 : ReloadCooldownSeconds;
@@ -649,6 +653,7 @@
             // Reload if backup was used (need to swap back). Otherwise, respect ReloadPlayerAfterAd — stripped segments bypass cooldown but not the user's preference.
             const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && (hadStrippedSegments || !tooSoonSinceLastReload));
             if (shouldReload) {
+                streamInfo.ReloadTimestamps.push(Date.now());// Only track actual reloads, not skipped ones
                 streamInfo.IsUsingModifiedM3U8 = false;
                 streamInfo.LastPlayerReload = Date.now();
                 postMessage({
@@ -763,7 +768,7 @@
                 const state = playerForMonitoringBuffering.state;
                 if (!player.core) {
                     playerForMonitoringBuffering = null;
-                } else if (state.props?.content?.type === 'live' && !player.isPaused() && !player.getHTMLVideoElement()?.ended && playerBufferState.lastFixTime <= Date.now() - PlayerBufferingMinRepeatDelay && !isActivelyStrippingAds && (!playerBufferState.lastReloadAt || Date.now() - playerBufferState.lastReloadAt >= 15000)) {
+                } else if (state.props?.content?.type === 'live' && !player.isPaused() && !player.getHTMLVideoElement()?.ended && playerBufferState.lastFixTime <= Date.now() - PlayerBufferingMinRepeatDelay && !isActivelyStrippingAds && (!playerBufferState.lastReloadAt || Date.now() - playerBufferState.lastReloadAt >= 15000) && (!playerBufferState.lastBackupSwitchAt || Date.now() - playerBufferState.lastBackupSwitchAt >= 10000)) {
                     const m3u8Url = player.core?.state?.path;
                     if (m3u8Url) {
                       const lastSlash = m3u8Url.lastIndexOf('/');
