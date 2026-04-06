@@ -1013,10 +1013,6 @@
         }
         const reactRootNode = findReactRootNode();
         if (!reactRootNode) {
-            if (!getPlayerAndState.loggedNoRoot) {
-                getPlayerAndState.loggedNoRoot = true;
-                console.log('[AD DEBUG] React root node not found — Twitch may have changed their React setup');
-            }
             return null;
         }
         let player = findReactNode(reactRootNode, node => node.setPlayerActive && node.props && node.props.mediaPlayerInstance);
