@@ -212,9 +212,9 @@ twitch-videoad.js text/javascript
                     if (e.data.key == 'UpdateAdBlockBanner') {
                         updateAdblockBanner(e.data);
                         // Clear drift catch-up when ads start — don't run 1.1x during ad handling
-                        if (e.data.hasAds && driftCatchUpInterval) {
-                            clearInterval(driftCatchUpInterval);
-                            driftCatchUpInterval = null;
+                        if (e.data.hasAds && (driftCatchUpInterval || driftCatchUpTimeout)) {
+                            if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
+                            if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
                             try { document.querySelector('video').playbackRate = 1.0; } catch {}
                         }
                     } else if (e.data.key == 'PauseResumePlayer') {
@@ -850,6 +850,7 @@ twitch-videoad.js text/javascript
     }
     let playerForMonitoringBuffering = null;
     let driftCatchUpInterval = null;
+    let driftCatchUpTimeout = null;
     const playerBufferState = {
         channelName: null,
         hasStreamStarted: false,
@@ -1148,7 +1149,8 @@ twitch-videoad.js text/javascript
                             const drift = liveEdge - videos[0].currentTime;
                             if (drift > 2) {
                                 console.log('[AD DEBUG] Post-reload live drift correction: ' + drift.toFixed(1) + 's behind — catching up at ' + DriftCorrectionRate + 'x');
-                                if (driftCatchUpInterval) clearInterval(driftCatchUpInterval);
+                                if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
+                                if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
                                 videos[0].playbackRate = DriftCorrectionRate;
                                 driftCatchUpInterval = setInterval(() => {
                                     try {
@@ -1160,11 +1162,12 @@ twitch-videoad.js text/javascript
                                                 console.log('[AD DEBUG] Drift correction complete — resumed normal playback speed');
                                                 clearInterval(driftCatchUpInterval);
                                                 driftCatchUpInterval = null;
+                                                if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
                                             }
                                         }
                                     } catch { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
                                 }, 500);
-                                setTimeout(() => { try { videos[0].playbackRate = 1.0; } catch {} if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; } }, 30000);
+                                driftCatchUpTimeout = setTimeout(() => { try { videos[0].playbackRate = 1.0; } catch {} if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; } driftCatchUpTimeout = null; }, 30000);
                             }
                         }
                     } catch {}
