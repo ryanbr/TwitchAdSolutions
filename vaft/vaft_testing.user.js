@@ -650,7 +650,13 @@
             const recentReloads = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000).length;
             const effectiveCooldown = recentReloads >= 3 ? ReloadCooldownSeconds * 3 : ReloadCooldownSeconds;
             const tooSoonSinceLastReload = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < (effectiveCooldown * 1000);
-            // Reload if backup was used (need to swap back). Otherwise, respect ReloadPlayerAfterAd — stripped segments bypass cooldown but not the user's preference.
+            // CSAI-only ad break: backup was used but no segments were stripped.
+            // Clear backup state without reload — avoids CSAI cascade on ad-heavy channels.
+            if (streamInfo.IsUsingModifiedM3U8 && !hadStrippedSegments) {
+                console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without reload');
+                streamInfo.IsUsingModifiedM3U8 = false;
+            }
+            // Reload if backup was used AND segments were stripped (need clean state). Otherwise, respect ReloadPlayerAfterAd + cooldown.
             const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && (hadStrippedSegments || !tooSoonSinceLastReload));
             if (shouldReload) {
                 streamInfo.ReloadTimestamps.push(Date.now());// Only track actual reloads, not skipped ones
