@@ -40,6 +40,7 @@
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
         scope.ReloadCooldownSeconds = 30;// Minimum seconds between reloads — breaks CSAI cascades triggered by reload
         scope.DisableReloadCap = false;// If true, buffer monitor reloads unlimited times (pre-v47 behavior, risk of cascade)
+        scope.DriftCorrectionRate = 1.1;// Playback rate for catching up to live edge after reload (0 = disable drift correction)
         scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
@@ -221,6 +222,12 @@
                 this.addEventListener('message', (e) => {
                     if (e.data.key == 'UpdateAdBlockBanner') {
                         updateAdblockBanner(e.data);
+                        // Clear drift catch-up when ads start — don't run 1.1x during ad handling
+                        if (e.data.hasAds && (driftCatchUpInterval || driftCatchUpTimeout)) {
+                            if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
+                            if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
+                            try { document.querySelector('video').playbackRate = 1.0; } catch {}
+                        }
                     } else if (e.data.key == 'PauseResumePlayer') {
                         doTwitchPlayerTask(true, false);
                     } else if (e.data.key == 'ReloadPlayer') {
@@ -843,6 +850,8 @@
         });
     }
     let playerForMonitoringBuffering = null;
+    let driftCatchUpInterval = null;
+    let driftCatchUpTimeout = null;
     const playerBufferState = {
         channelName: null,
         hasStreamStarted: false,
@@ -1117,13 +1126,31 @@
                         if (videos.length > 0 && videos[0].muted) {
                             videos[0].muted = false;
                         }
-                        // Correct live drift after reload
-                        if (videos.length > 0 && videos[0].buffered.length > 0 && videos[0].readyState >= 3) {
+                        // Correct live drift after reload — gradual catch-up via playback rate instead of jarring seek
+                        if (videos.length > 0 && videos[0].buffered.length > 0 && videos[0].readyState >= 3 && DriftCorrectionRate > 1) {
                             const liveEdge = videos[0].buffered.end(videos[0].buffered.length - 1);
                             const drift = liveEdge - videos[0].currentTime;
                             if (drift > 2) {
-                                console.log('[AD DEBUG] Post-reload live drift correction: ' + drift.toFixed(1) + 's behind');
-                                videos[0].currentTime = liveEdge - 0.5;
+                                console.log('[AD DEBUG] Post-reload live drift correction: ' + drift.toFixed(1) + 's behind — catching up at ' + DriftCorrectionRate + 'x');
+                                if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
+                                if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
+                                videos[0].playbackRate = DriftCorrectionRate;
+                                driftCatchUpInterval = setInterval(() => {
+                                    try {
+                                        const vid = document.querySelector('video');
+                                        if (vid && vid.buffered.length > 0) {
+                                            const remaining = vid.buffered.end(vid.buffered.length - 1) - vid.currentTime;
+                                            if (remaining <= 1) {
+                                                vid.playbackRate = 1.0;
+                                                console.log('[AD DEBUG] Drift correction complete — resumed normal playback speed');
+                                                clearInterval(driftCatchUpInterval);
+                                                driftCatchUpInterval = null;
+                                                if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
+                                            }
+                                        }
+                                    } catch { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
+                                }, 500);
+                                driftCatchUpTimeout = setTimeout(() => { try { videos[0].playbackRate = 1.0; } catch {} if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; } driftCatchUpTimeout = null; }, 30000);
                             }
                         }
                     } catch {}
@@ -1323,6 +1350,10 @@
         const lsDisableReloadCap = localStorage.getItem('twitchAdSolutions_disableReloadCap');
         if (lsDisableReloadCap !== null) {
             DisableReloadCap = lsDisableReloadCap === 'true';
+        }
+        const lsDriftRate = parseFloat(localStorage.getItem('twitchAdSolutions_driftCorrectionRate'));
+        if (!isNaN(lsDriftRate) && lsDriftRate >= 0) {
+            DriftCorrectionRate = lsDriftRate;
         }
         const lsPlayerType = localStorage.getItem('twitchAdSolutions_playerType');
         if (lsPlayerType !== null) {
