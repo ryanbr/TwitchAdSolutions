@@ -747,7 +747,13 @@ twitch-videoad.js text/javascript
                 streamInfo.FailedBackupPlayerTypes.clear();
                 if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
                 streamInfo.CleanPlaylistCount = 0;
-                const tooSoonSinceLastReload = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < (ReloadCooldownSeconds * 1000);
+                // Auto-escalate cooldown: if 3+ reloads in last 2 min, triple the cooldown to reduce cascade pressure
+                if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
+                streamInfo.ReloadTimestamps.push(Date.now());
+                streamInfo.ReloadTimestamps = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000);
+                const recentReloads = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 120000).length;
+                const effectiveCooldown = recentReloads >= 3 ? ReloadCooldownSeconds * 3 : ReloadCooldownSeconds;
+                const tooSoonSinceLastReload = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < (effectiveCooldown * 1000);
                 // Reload if backup was used (need to swap back). Otherwise, respect ReloadPlayerAfterAd — stripped segments bypass cooldown but not the user's preference.
                 const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && (hadStrippedSegments || !tooSoonSinceLastReload));
                 if (shouldReload) {
@@ -758,7 +764,7 @@ twitch-videoad.js text/javascript
                     });
                 } else {
                     if (tooSoonSinceLastReload) {
-                        console.log('[AD DEBUG] Skipping reload — last reload was ' + ((Date.now() - streamInfo.LastPlayerReload) / 1000).toFixed(0) + 's ago (CSAI cascade prevention)');
+                        console.log('[AD DEBUG] Skipping reload — last reload was ' + ((Date.now() - streamInfo.LastPlayerReload) / 1000).toFixed(0) + 's ago (cooldown: ' + effectiveCooldown + 's' + (recentReloads >= 3 ? ', auto-escalated from ' + recentReloads + ' reloads in 2min' : '') + ')');
                     }
                     postMessage({
                         key: 'PauseResumePlayer'
