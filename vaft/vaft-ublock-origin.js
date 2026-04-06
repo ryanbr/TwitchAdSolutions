@@ -739,7 +739,14 @@ twitch-videoad.js text/javascript
             streamInfo.FailedBackupPlayerTypes.clear();
             if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
             const tooSoonSinceLastReload = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < (ReloadCooldownSeconds * 1000);
-            // Reload if backup was used (need to swap back). Otherwise, respect ReloadPlayerAfterAd — stripped segments bypass cooldown but not the user's preference.
+            // CSAI-only ad break: backup was used but no segments were stripped.
+            // Skip reload entirely — avoids CSAI cascade on ad-heavy channels.
+            if (!hadStrippedSegments) {
+                console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without reload');
+                streamInfo.IsUsingModifiedM3U8 = false;
+                postMessage({ key: 'PauseResumePlayer' });
+            } else {
+            // Reload if backup was used AND segments were stripped (need clean state). Otherwise, respect ReloadPlayerAfterAd + cooldown.
             const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && (hadStrippedSegments || !tooSoonSinceLastReload));
             if (shouldReload) {
                 streamInfo.IsUsingModifiedM3U8 = false;
@@ -755,6 +762,7 @@ twitch-videoad.js text/javascript
                     key: 'PauseResumePlayer'
                 });
             }
+            }// end else (non-CSAI path)
         }
         postMessage({
             key: 'UpdateAdBlockBanner',
