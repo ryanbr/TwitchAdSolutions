@@ -652,7 +652,7 @@
             const tooSoonSinceLastReload = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < (effectiveCooldown * 1000);
             // CSAI-only ad break: backup was used but no segments were stripped.
             // Skip reload entirely — avoids CSAI cascade on ad-heavy channels.
-            if (streamInfo.IsUsingModifiedM3U8 && !hadStrippedSegments) {
+            if (!hadStrippedSegments) {
                 console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without reload');
                 streamInfo.IsUsingModifiedM3U8 = false;
                 postMessage({ key: 'PauseResumePlayer' });

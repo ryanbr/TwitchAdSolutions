@@ -762,7 +762,7 @@ twitch-videoad.js text/javascript
                 // CSAI-only ad break: backup was used but no segments were stripped.
                 // Skip reload entirely — avoids CSAI cascade on ad-heavy channels.
                 // Clearing the flag makes next m3u8 poll serve main stream seamlessly.
-                if (streamInfo.IsUsingModifiedM3U8 && !hadStrippedSegments) {
+                if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without reload');
                     streamInfo.IsUsingModifiedM3U8 = false;
                     postMessage({ key: 'PauseResumePlayer' });
