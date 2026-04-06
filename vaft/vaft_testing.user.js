@@ -647,7 +647,7 @@
             // Auto-escalate cooldown: if 3+ reloads in last 2 min, triple the cooldown to reduce cascade pressure
             if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
             streamInfo.ReloadTimestamps = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000);
-            const recentReloads = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 120000).length;
+            const recentReloads = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000).length;
             const effectiveCooldown = recentReloads >= 3 ? ReloadCooldownSeconds * 3 : ReloadCooldownSeconds;
             const tooSoonSinceLastReload = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < (effectiveCooldown * 1000);
             // Reload if backup was used (need to swap back). Otherwise, respect ReloadPlayerAfterAd — stripped segments bypass cooldown but not the user's preference.
@@ -661,7 +661,7 @@
                 });
             } else {
                 if (tooSoonSinceLastReload) {
-                    console.log('[AD DEBUG] Skipping reload — last reload was ' + ((Date.now() - streamInfo.LastPlayerReload) / 1000).toFixed(0) + 's ago (cooldown: ' + effectiveCooldown + 's' + (recentReloads >= 3 ? ', auto-escalated from ' + recentReloads + ' reloads in 2min' : '') + ')');
+                    console.log('[AD DEBUG] Skipping reload — last reload was ' + ((Date.now() - streamInfo.LastPlayerReload) / 1000).toFixed(0) + 's ago (cooldown: ' + effectiveCooldown + 's' + (recentReloads >= 3 ? ', auto-escalated from ' + recentReloads + ' reloads in 5min' : '') + ')');
                 }
                 postMessage({
                     key: 'PauseResumePlayer'
