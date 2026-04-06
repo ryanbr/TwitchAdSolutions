@@ -45,8 +45,8 @@
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
         scope.HasTriggeredPlayerReload = false;
-        scope.StreamInfos = [];
-        scope.StreamInfosByUrl = [];
+        scope.StreamInfos = Object.create(null);
+        scope.StreamInfosByUrl = Object.create(null);
         scope.GQLDeviceID = null;
         scope.ClientVersion = null;
         scope.ClientSession = null;
@@ -328,7 +328,7 @@
                                         IsUsingModifiedM3U8: false,
                                         UsherParams: parsedUrl.search,
                                         RequestedAds: new Set(),
-                                        Urls: [],// xxx.m3u8 -> { Resolution: "284x160", FrameRate: 30.0 }
+                                        Urls: Object.create(null),// xxx.m3u8 -> { Resolution: "284x160", FrameRate: 30.0 }
                                         ResolutionList: [],
                                         BackupEncodingsM3U8Cache: [],
                                         ActiveBackupPlayerType: null,
