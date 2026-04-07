@@ -121,7 +121,14 @@ twitch-videoad.js text/javascript
         return !hasConflict || hasReinsert;
     }
     // Replace window.Worker to intercept Twitch's video worker and inject ad-blocking logic
+    let injectedBlobUrl = null;
     function hookWindowWorker() {
+        // Prevent Twitch from revoking our injected worker blob URL
+        const originalRevokeObjectURL = URL.revokeObjectURL;
+        URL.revokeObjectURL = function(url) {
+            if (url === injectedBlobUrl) return;
+            return originalRevokeObjectURL.call(this, url);
+        };
         const reinsert = getWorkersForReinsert(window.Worker);
         const newWorker = class Worker extends getCleanWorker(window.Worker) {
             constructor(twitchBlobUrl, options) {
@@ -205,7 +212,8 @@ twitch-videoad.js text/javascript
                     hookWorkerFetch();
                     eval(workerString);
                 `;
-                super(URL.createObjectURL(new Blob([newBlobStr])), options);
+                injectedBlobUrl = URL.createObjectURL(new Blob([newBlobStr]));
+                super(injectedBlobUrl, options);
                 twitchWorkers.length = 0;
                 twitchWorkers.push(this);
                 this.addEventListener('message', (e) => {
