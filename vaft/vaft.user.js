@@ -879,6 +879,31 @@
     let playerForMonitoringBuffering = null;
     let driftCatchUpInterval = null;
     let driftCatchUpTimeout = null;
+    function startDriftCorrection(videoElement) {
+        if (DriftCorrectionRate <= 1) return;
+        if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
+        if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
+        videoElement.playbackRate = DriftCorrectionRate;
+        console.log('[AD DEBUG] Drift correction: catching up at ' + DriftCorrectionRate + 'x');
+        driftCatchUpInterval = setInterval(() => {
+            try {
+                const vid = document.querySelector('video');
+                if (vid && vid.buffered.length > 0) {
+                    if (vid.buffered.end(vid.buffered.length - 1) - vid.currentTime <= 1) {
+                        vid.playbackRate = 1.0;
+                        console.log('[AD DEBUG] Drift correction complete — resumed normal playback speed');
+                        clearInterval(driftCatchUpInterval); driftCatchUpInterval = null;
+                        if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
+                    }
+                }
+            } catch { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
+        }, 500);
+        driftCatchUpTimeout = setTimeout(() => {
+            try { videoElement.playbackRate = 1.0; } catch {}
+            if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
+            driftCatchUpTimeout = null;
+        }, 30000);
+    }
     const playerBufferState = {
         channelName: null,
         hasStreamStarted: false,
@@ -943,6 +968,18 @@
                                 const escalateToReload = wouldEscalate && (DisableReloadCap || !playerBufferState.recoveryReloadUsed);
                                 const reloadCapNote = wouldEscalate && !escalateToReload ? ' (reload cap reached, pause/play only — set twitchAdSolutions_disableReloadCap=true to bypass)' : (escalateToReload ? ' (escalating to reload)' : '');
                                 console.log('Attempt to fix buffering position:' + playerBufferState.position + ' bufferedPosition:' + playerBufferState.bufferedPosition + ' bufferDuration:' + playerBufferState.bufferDuration + reloadCapNote);
+                                // Seek past buffer gap instead of stalling + drift to recover
+                                const video = player.getHTMLVideoElement?.();
+                                if (video && video.buffered.length > 1) {
+                                    for (let bi = 0; bi < video.buffered.length; bi++) {
+                                        if (video.buffered.start(bi) > video.currentTime + 0.5) {
+                                            console.log('[AD DEBUG] Seeking past ' + (video.buffered.start(bi) - video.currentTime).toFixed(1) + 's buffer gap');
+                                            video.currentTime = video.buffered.start(bi);
+                                            startDriftCorrection(video);
+                                            break;
+                                        }
+                                    }
+                                }
                                 const isPausePlay = escalateToReload ? false : !PlayerBufferingDoPlayerReload;
                                 const isReload = escalateToReload ? true : PlayerBufferingDoPlayerReload;
                                 doTwitchPlayerTask(isPausePlay, isReload);
@@ -1179,31 +1216,13 @@
                         if (videos.length > 0 && videos[0].muted) {
                             videos[0].muted = false;
                         }
-                        // Correct live drift after reload — gradual catch-up via playback rate instead of jarring seek
-                        if (videos.length > 0 && videos[0].buffered.length > 0 && videos[0].readyState >= 3 && DriftCorrectionRate > 1) {
+                        // Correct live drift after reload
+                        if (videos.length > 0 && videos[0].buffered.length > 0 && videos[0].readyState >= 3) {
                             const liveEdge = videos[0].buffered.end(videos[0].buffered.length - 1);
                             const drift = liveEdge - videos[0].currentTime;
                             if (drift > 2) {
-                                console.log('[AD DEBUG] Post-reload live drift correction: ' + drift.toFixed(1) + 's behind — catching up at ' + DriftCorrectionRate + 'x');
-                                if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
-                                if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
-                                videos[0].playbackRate = DriftCorrectionRate;
-                                driftCatchUpInterval = setInterval(() => {
-                                    try {
-                                        const vid = document.querySelector('video');
-                                        if (vid && vid.buffered.length > 0) {
-                                            const remaining = vid.buffered.end(vid.buffered.length - 1) - vid.currentTime;
-                                            if (remaining <= 1) {
-                                                vid.playbackRate = 1.0;
-                                                console.log('[AD DEBUG] Drift correction complete — resumed normal playback speed');
-                                                clearInterval(driftCatchUpInterval);
-                                                driftCatchUpInterval = null;
-                                                if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
-                                            }
-                                        }
-                                    } catch { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
-                                }, 500);
-                                driftCatchUpTimeout = setTimeout(() => { try { videos[0].playbackRate = 1.0; } catch {} if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; } driftCatchUpTimeout = null; }, 30000);
+                                console.log('[AD DEBUG] Post-reload live drift correction: ' + drift.toFixed(1) + 's behind');
+                                startDriftCorrection(videos[0]);
                             }
                         }
                     } catch {}
