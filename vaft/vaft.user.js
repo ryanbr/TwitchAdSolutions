@@ -958,6 +958,11 @@
                             playerBufferState.fixAttempts = 0;
                             playerBufferState.recoveryReloadUsed = false;
                         }
+                        // Detect position jump (native gap recovery) — drift to catch up
+                        if (playerBufferState.position > 0 && position - playerBufferState.position > 1.5) {
+                            console.log('[AD DEBUG] Position jumped ' + (position - playerBufferState.position).toFixed(1) + 's — starting drift correction');
+                            startDriftCorrection(player.getHTMLVideoElement?.());
+                        }
                         playerBufferState.position = position;
                         playerBufferState.bufferedPosition = bufferedPosition;
                         playerBufferState.bufferDuration = bufferDuration;
