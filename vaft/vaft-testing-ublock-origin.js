@@ -919,6 +919,31 @@ twitch-videoad.js text/javascript
     };
     // Poll the player state to detect and fix buffering caused by ad stream switching
     function monitorPlayerBuffering() {
+        // Fresh player lookup every tick (avoids stale ref when Twitch restarts its own player)
+        playerForMonitoringBuffering = null;
+        {
+            const playerAndState = getPlayerAndState();
+            if (playerAndState && playerAndState.player && playerAndState.state) {
+                playerForMonitoringBuffering = {
+                    player: playerAndState.player,
+                    state: playerAndState.state
+                };
+                // Track user pause intent on the video element (once per element)
+                const video = playerAndState.player.getHTMLVideoElement?.();
+                if (video && !video.__tasIntentHooked) {
+                    video.__tasIntentHooked = true;
+                    video.addEventListener('pause', () => {
+                        if (!playerBufferState.weJustPaused || (Date.now() - playerBufferState.weJustPaused) > 2000) {
+                            playerBufferState.userPauseIntent = true;
+                        }
+                    });
+                    video.addEventListener('play', () => {
+                        playerBufferState.userPauseIntent = false;
+                        playerBufferState.loggedPauseIntent = false;
+                    });
+                }
+            }
+        }
         if (playerForMonitoringBuffering) {
             try {
                 const player = playerForMonitoringBuffering.player;
@@ -1007,29 +1032,6 @@ twitch-videoad.js text/javascript
             } catch (err) {
                 console.error('error when monitoring player for buffering: ' + err);
                 playerForMonitoringBuffering = null;
-            }
-        }
-        if (!playerForMonitoringBuffering) {
-            const playerAndState = getPlayerAndState();
-            if (playerAndState && playerAndState.player && playerAndState.state) {
-                playerForMonitoringBuffering = {
-                    player: playerAndState.player,
-                    state: playerAndState.state
-                };
-                // Track user pause intent on the video element
-                const video = playerAndState.player.getHTMLVideoElement?.();
-                if (video && !video.__tasIntentHooked) {
-                    video.__tasIntentHooked = true;
-                    video.addEventListener('pause', () => {
-                        if (!playerBufferState.weJustPaused || (Date.now() - playerBufferState.weJustPaused) > 2000) {
-                            playerBufferState.userPauseIntent = true;
-                        }
-                    });
-                    video.addEventListener('play', () => {
-                        playerBufferState.userPauseIntent = false;
-                        playerBufferState.loggedPauseIntent = false;
-                    });
-                }
             }
         }
         const isLive = playerForMonitoringBuffering?.state?.props?.content?.type === 'live';
@@ -1199,7 +1201,7 @@ twitch-videoad.js text/javascript
             playerBufferState.lastReloadAt = Date.now();
             playerBufferState.userPauseIntent = false;
             playerBufferState.loggedPauseIntent = false;
-            playerForMonitoringBuffering = null;// Force re-acquire player ref after reload — old ref reads stale buffer state
+            // playerForMonitoringBuffering re-acquired fresh every tick — no manual invalidation needed
             console.log('Reloading Twitch player');
             playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
             postTwitchWorkerMessage('TriggeredPlayerReload');
