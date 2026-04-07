@@ -1064,7 +1064,7 @@
                 reactRootNode = rootNode._reactRootContainer._internalRoot.current;
             }
             if (reactRootNode == null && rootNode != null) {
-                const containerName = Object.keys(rootNode).find(x => x.startsWith('__reactContainer'));
+                const containerName = Object.keys(rootNode).find(x => x.startsWith('__reactContainer') || x.startsWith('__reactFiber'));
                 if (containerName != null) {
                     reactRootNode = rootNode[containerName];
                 }
@@ -1075,23 +1075,32 @@
         if (!reactRootNode) {
             return null;
         }
+        // Primary: named property lookup
         let player = findReactNode(reactRootNode, node => node.setPlayerActive && node.props && node.props.mediaPlayerInstance);
         player = player && player.props && player.props.mediaPlayerInstance ? player.props.mediaPlayerInstance : null;
         if (player?.playerInstance) {
             player = player.playerInstance;
         }
+        // Fallback: structural match if Twitch obfuscates property names
+        if (!player) {
+            player = findReactNode(reactRootNode, node => node.getHTMLVideoElement && node.getBufferDuration && node.core?.state);
+        }
+        // Primary: named property lookup
         const playerState = findReactNode(reactRootNode, node => node.setSrc && node.setInitialPlaybackSettings);
+        // Fallback: structural match — setSrc exists but setInitialPlaybackSettings was renamed
+        const playerStateFallback = !playerState ? findReactNode(reactRootNode, node => node.setSrc && node.setStreamManagerNode && !node.getHTMLVideoElement) : null;
+        const finalPlayerState = playerState || playerStateFallback;
         if (!player && !getPlayerAndState.loggedNoPlayer) {
             getPlayerAndState.loggedNoPlayer = true;
             console.log('[AD DEBUG] Player not found — Twitch may have renamed setPlayerActive/mediaPlayerInstance');
         }
-        if (!playerState && !getPlayerAndState.loggedNoState) {
+        if (!finalPlayerState && !getPlayerAndState.loggedNoState) {
             getPlayerAndState.loggedNoState = true;
             console.log('[AD DEBUG] Player state not found — Twitch may have renamed setSrc/setInitialPlaybackSettings');
         }
         return  {
             player: player,
-            state: playerState
+            state: finalPlayerState
         };
     }
     // Pause/play or fully reload the Twitch player, preserving quality/volume settings
