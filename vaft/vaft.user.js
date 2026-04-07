@@ -65,6 +65,21 @@
         scope.IsAdStrippingEnabled = true;
         scope.AdSegmentCache = new Map();
         scope.AllSegmentsAreAdSegments = false;
+        scope.StreamInfoMaxAgeMs = 30 * 60 * 1000;
+    }
+    function pruneStreamInfos() {
+        const now = Date.now();
+        for (const channelName in StreamInfos) {
+            const streamInfo = StreamInfos[channelName];
+            if (!streamInfo || !streamInfo.LastSeenAt || (now - streamInfo.LastSeenAt) > StreamInfoMaxAgeMs) {
+                if (streamInfo && streamInfo.Urls) {
+                    for (const url in streamInfo.Urls) {
+                        delete StreamInfosByUrl[url];
+                    }
+                }
+                delete StreamInfos[channelName];
+            }
+        }
     }
     let isActivelyStrippingAds = false;
     let localStorageHookFailed = false;
@@ -170,6 +185,9 @@
                     ${replaceServerTimeInM3u8.toString()}
                     const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
                     declareOptions(self);
+                    if (!self.__tasPruneInterval) {
+                        self.__tasPruneInterval = setInterval(pruneStreamInfos, 5 * 60 * 1000);
+                    }
                     ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};
                     ReloadCooldownSeconds = ${ReloadCooldownSeconds};
                     DisableReloadCap = ${DisableReloadCap};
@@ -337,6 +355,7 @@
                                     console.log('[AD DEBUG] New stream session — channel: ' + channelName + ', API: ' + (V2API ? 'v2' : 'v1'));
                                     StreamInfos[channelName] = streamInfo = {
                                         ChannelName: channelName,
+                                        LastSeenAt: Date.now(),
                                         IsShowingAd: false,
                                         LastPlayerReload: 0,
                                         EncodingsM3U8: encodingsM3u8,
@@ -409,6 +428,7 @@
                                         }
                                     }
                                 }
+                                streamInfo.LastSeenAt = Date.now();
                                 streamInfo.LastPlayerReload = Date.now();
                                 resolve(new Response(replaceServerTimeInM3u8(streamInfo.IsUsingModifiedM3U8 ? streamInfo.ModifiedM3U8 : streamInfo.EncodingsM3U8, serverTime)));
                             } else {
@@ -580,6 +600,7 @@
         if (!streamInfo) {
             return textStr;
         }
+        streamInfo.LastSeenAt = Date.now();
         if (HasTriggeredPlayerReload) {
             HasTriggeredPlayerReload = false;
             streamInfo.LastPlayerReload = Date.now();
