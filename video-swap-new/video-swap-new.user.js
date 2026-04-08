@@ -131,7 +131,7 @@
             };
         }
         const reinsert = getWorkersForReinsert(window.Worker);
-        const newWorker = class Worker extends getCleanWorker(window.Worker) {
+        const newWorker = class Worker extends (getCleanWorker(window.Worker) || window.Worker) {
             constructor(twitchBlobUrl, options) {
                 let isTwitchWorker = false;
                 try {
@@ -140,6 +140,14 @@
                 if (!isTwitchWorker) {
                     super(twitchBlobUrl, options);
                     console.log('[AD DEBUG] Non-Twitch worker skipped: ' + twitchBlobUrl);
+                    return;
+                }
+                // Pre-check: verify we can fetch the worker JS before injecting
+                let prefetchedWorkerJs = null;
+                try { prefetchedWorkerJs = getWasmWorkerJs(twitchBlobUrl); } catch {}
+                if (!prefetchedWorkerJs) {
+                    super(twitchBlobUrl, options);
+                    console.log('[AD DEBUG] Failed to fetch worker JS — falling back to unmodified worker');
                     return;
                 }
                 console.log('[AD DEBUG] Worker intercepted — injecting ad-block hooks');

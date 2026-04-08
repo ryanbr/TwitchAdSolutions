@@ -130,7 +130,7 @@ twitch-videoad.js text/javascript
             return originalRevokeObjectURL.call(this, url);
         };
         const reinsert = getWorkersForReinsert(window.Worker);
-        const newWorker = class Worker extends getCleanWorker(window.Worker) {
+        const newWorker = class Worker extends (getCleanWorker(window.Worker) || window.Worker) {
             constructor(twitchBlobUrl, options) {
                 let isTwitchWorker = false;
                 try {

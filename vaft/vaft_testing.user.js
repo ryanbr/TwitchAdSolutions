@@ -126,7 +126,7 @@
     // Replace window.Worker to intercept Twitch's video worker and inject ad-blocking logic
     function hookWindowWorker() {
         const reinsert = getWorkersForReinsert(window.Worker);
-        const newWorker = class Worker extends getCleanWorker(window.Worker) {
+        const newWorker = class Worker extends (getCleanWorker(window.Worker) || window.Worker) {
             constructor(twitchBlobUrl, options) {
                 let isTwitchWorker = false;
                 try {
