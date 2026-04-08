@@ -923,8 +923,7 @@ twitch-videoad.js text/javascript
     let driftCatchUpTimeout = null;
     function startDriftCorrection(videoElement) {
         if (DriftCorrectionRate <= 1) return;
-        if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
-        if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
+        if (driftCatchUpInterval) return; // already correcting — let it finish or timeout
         videoElement.playbackRate = DriftCorrectionRate;
         console.log('[AD DEBUG] Drift correction: catching up at ' + DriftCorrectionRate + 'x');
         driftCatchUpInterval = setInterval(() => {
