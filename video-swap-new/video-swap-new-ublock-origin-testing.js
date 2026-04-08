@@ -44,6 +44,7 @@ twitch-videoad.js text/javascript
             }
         }
     }
+    const loggedCsaiTypes = new Set();
     let twitchPlayerAndState = null;
     let localStorageHookFailed = false;
     const twitchWorkers = [];

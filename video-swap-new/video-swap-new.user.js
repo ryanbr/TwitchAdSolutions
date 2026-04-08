@@ -56,6 +56,7 @@
             }
         }
     }
+    const loggedCsaiTypes = new Set();
     let twitchPlayerAndState = null;
     let localStorageHookFailed = false;
     const twitchWorkers = [];
@@ -894,7 +895,10 @@
                 }
                 if (url.includes('edge.ads.twitch.tv')) {
                     const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
-                    console.log('[AD DEBUG] CSAI ad request detected — type: ' + csaiType + ' (client-side ad insertion, not blockable via m3u8)');
+                    if (!loggedCsaiTypes.has(csaiType)) {
+                        loggedCsaiTypes.add(csaiType);
+                        console.log('[AD DEBUG] CSAI ad request detected — type: ' + csaiType + ' (client-side ad insertion, not blockable via m3u8)');
+                    }
                 }
             }
             return realFetch.apply(this, arguments);
@@ -1181,7 +1185,11 @@
     XMLHttpRequest.prototype.open = function(method, url) {
         if (typeof url === 'string' && url.includes('edge.ads.twitch.tv')) {
             const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
-            console.log('[AD DEBUG] CSAI ad request (XHR) detected — type: ' + csaiType);
+            const xhrKey = csaiType + '-xhr';
+            if (!loggedCsaiTypes.has(xhrKey)) {
+                loggedCsaiTypes.add(xhrKey);
+                console.log('[AD DEBUG] CSAI ad request (XHR) detected — type: ' + csaiType);
+            }
         }
         return realXHROpen.apply(this, arguments);
     };
