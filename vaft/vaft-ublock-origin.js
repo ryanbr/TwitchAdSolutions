@@ -779,7 +779,8 @@ twitch-videoad.js text/javascript
             streamInfo.CleanPlaylistCount++;
             // Check if the current playlist has live segments — if not, backup stream is dead
             const hasLiveSegments = textStr.includes(',live');
-            if (streamInfo.CleanPlaylistCount >= 2 || !hasLiveSegments) {
+            const cleanThreshold = streamInfo.NumStrippedAdSegments === 0 ? 1 : 2;
+            if (streamInfo.CleanPlaylistCount >= cleanThreshold || !hasLiveSegments) {
                 if (!hasLiveSegments) {
                     console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
                 }
