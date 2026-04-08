@@ -1122,7 +1122,7 @@
             const overlay = promoLinks[i].closest('.player-overlay-background');
             if (overlay && !overlay.dataset.tasHidden) {
                 overlay.dataset.tasHidden = '';
-                overlay.style.display = 'none';
+                overlay.style.setProperty('display', 'none', 'important');
                 console.log('[AD DEBUG] Hidden Twitch ad/Turbo promo overlay');
             }
         }
