@@ -32,6 +32,10 @@ twitch-videoad.js text/javascript
         scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
         scope.StreamInfoMaxAgeMs = 30 * 60 * 1000;
     }
+    function maskAsNative(fn, name) {
+        fn.toString = () => 'function ' + name + '() { [native code] }';
+        return fn;
+    }
     function pruneStreamInfos() {
         const now = Date.now();
         for (const channelName in StreamInfos) {
@@ -112,12 +116,13 @@ twitch-videoad.js text/javascript
     let injectedBlobUrl = null;
     function hookWindowWorker() {
         // Prevent Twitch from revoking our injected worker blob URL
-        if (!URL.__tasOriginalRevokeObjectURL) {
-            URL.__tasOriginalRevokeObjectURL = URL.revokeObjectURL;
-            URL.revokeObjectURL = function(url) {
+        if (!URL.revokeObjectURL.__tasMasked) {
+            const originalRevokeObjectURL = URL.revokeObjectURL;
+            URL.revokeObjectURL = maskAsNative(function(url) {
                 if (url === injectedBlobUrl) return;
-                return URL.__tasOriginalRevokeObjectURL.call(this, url);
-            };
+                return originalRevokeObjectURL.call(this, url);
+            }, 'revokeObjectURL');
+            URL.revokeObjectURL.__tasMasked = true;
         }
         const reinsert = getWorkersForReinsert(window.Worker);
         const newWorker = class Worker extends (getCleanWorker(window.Worker) || window.Worker) {
@@ -842,7 +847,7 @@ twitch-videoad.js text/javascript
         let hasLoggedHeaders = false;
         const realFetch = window.fetch;
         window.realFetch = realFetch;
-        window.fetch = function(url, init, ...args) {
+        window.fetch = maskAsNative(function(url, init, ...args) {
             if (typeof url === 'string') {
                 if (url.includes('gql')) {
                     let deviceId = init.headers['X-Device-Id'];
@@ -898,7 +903,7 @@ twitch-videoad.js text/javascript
                 }
             }
             return realFetch.apply(this, arguments);
-        };
+        }, 'fetch');
     }
     function updateAdblockBanner(data) {
         const playerRootDiv = document.querySelector('.video-player');
@@ -1129,20 +1134,20 @@ twitch-videoad.js text/javascript
                 cachedValues.set(keysToCache[i], localStorage.getItem(keysToCache[i]));
             }
             const realSetItem = localStorage.setItem;
-            localStorage.setItem = function(key, value) {
+            localStorage.setItem = maskAsNative(function(key, value) {
                 if (cachedValues.has(key)) {
                     cachedValues.set(key, value);
                 }
                 realSetItem.apply(this, arguments);
-            };
+            }, 'setItem');
             const realGetItem = localStorage.getItem;
-            localStorage.getItem = function(key) {
+            localStorage.getItem = maskAsNative(function(key) {
                 if (cachedValues.has(key)) {
                     return cachedValues.get(key);
                 }
                 return realGetItem.apply(this, arguments);
-            };
-            if (!localStorage.getItem.toString().includes(Object.keys({cachedValues})[0])) {
+            }, 'getItem');
+            if (localStorage.getItem === realGetItem) {
                 // These hooks are useful to preserve player state on player reload
                 // Firefox doesn't allow hooking of localStorage functions but chrome does
                 localStorageHookFailed = true;
@@ -1178,7 +1183,7 @@ twitch-videoad.js text/javascript
     hookWindowWorker();
     hookFetch();
     const realXHROpen = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function(method, url) {
+    XMLHttpRequest.prototype.open = maskAsNative(function(method, url) {
         if (typeof url === 'string' && url.includes('edge.ads.twitch.tv')) {
             const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
             const xhrKey = csaiType + '-xhr';
@@ -1188,7 +1193,7 @@ twitch-videoad.js text/javascript
             }
         }
         return realXHROpen.apply(this, arguments);
-    };
+    }, 'open');
     monitorLiveStatus();
     if (document.readyState === "complete" || document.readyState === "interactive") {
         onContentLoaded();

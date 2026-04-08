@@ -82,6 +82,10 @@
             }
         }
     }
+    function maskAsNative(fn, name) {
+        fn.toString = () => 'function ' + name + '() { [native code] }';
+        return fn;
+    }
     const loggedCsaiTypes = new Set();
     let isActivelyStrippingAds = false;
     let localStorageHookFailed = false;
@@ -152,12 +156,13 @@
     let injectedBlobUrl = null;
     function hookWindowWorker() {
         // Prevent Twitch from revoking our injected worker blob URL
-        if (!URL.__tasOriginalRevokeObjectURL) {
-            URL.__tasOriginalRevokeObjectURL = URL.revokeObjectURL;
-            URL.revokeObjectURL = function(url) {
+        if (!URL.revokeObjectURL.__tasMasked) {
+            const originalRevokeObjectURL = URL.revokeObjectURL;
+            URL.revokeObjectURL = maskAsNative(function(url) {
                 if (url === injectedBlobUrl) return;
-                return URL.__tasOriginalRevokeObjectURL.call(this, url);
-            };
+                return originalRevokeObjectURL.call(this, url);
+            }, 'revokeObjectURL');
+            URL.revokeObjectURL.__tasMasked = true;
         }
         const reinsert = getWorkersForReinsert(window.Worker);
         const cleanWorker = getCleanWorker(window.Worker) || window.Worker;
@@ -1361,7 +1366,7 @@
         let hasLoggedHeaders = false;
         const realFetch = window.fetch;
         window.realFetch = realFetch;
-        window.fetch = function(url, init, ...args) {
+        window.fetch = maskAsNative(function(url, init, ...args) {
             if (typeof url === 'string') {
                 if (url.includes('gql')) {
                     let deviceId = init.headers['X-Device-Id'];
@@ -1423,7 +1428,7 @@
                 }
             }
             return realFetch.apply(this, arguments);
-        };
+        }, 'fetch');
     }
     // Set up visibility overrides and localStorage hooks to preserve player state across reloads
     function onContentLoaded() {
@@ -1486,20 +1491,20 @@
                 cachedValues.set(keysToCache[i], localStorage.getItem(keysToCache[i]));
             }
             const realSetItem = localStorage.setItem;
-            localStorage.setItem = function(key, value) {
+            localStorage.setItem = maskAsNative(function(key, value) {
                 if (cachedValues.has(key)) {
                     cachedValues.set(key, value);
                 }
                 realSetItem.apply(this, arguments);
-            };
+            }, 'setItem');
             const realGetItem = localStorage.getItem;
-            localStorage.getItem = function(key) {
+            localStorage.getItem = maskAsNative(function(key) {
                 if (cachedValues.has(key)) {
                     return cachedValues.get(key);
                 }
                 return realGetItem.apply(this, arguments);
-            };
-            if (!localStorage.getItem.toString().includes(Object.keys({cachedValues})[0])) {
+            }, 'getItem');
+            if (localStorage.getItem === realGetItem) {
                 // These hooks are useful to preserve player state on player reload
                 // Firefox doesn't allow hooking of localStorage functions but chrome does
                 localStorageHookFailed = true;
@@ -1547,7 +1552,7 @@
     hookFetch();
     // Hook XHR to detect CSAI ad requests that bypass fetch
     const realXHROpen = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function(method, url) {
+    XMLHttpRequest.prototype.open = maskAsNative(function(method, url) {
         if (typeof url === 'string' && url.includes('edge.ads.twitch.tv')) {
             const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
             const xhrKey = csaiType + '-xhr';
@@ -1557,7 +1562,7 @@
             }
         }
         return realXHROpen.apply(this, arguments);
-    };
+    }, 'open');
     if (PlayerBufferingFix) {
         monitorPlayerBuffering();
     }
