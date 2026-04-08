@@ -1065,7 +1065,7 @@ twitch-videoad.js text/javascript
                         }
                         // Detect position jump (native gap recovery) — drift to catch up
                         // Skip during ad breaks: backup stream switching causes buffer gaps that trigger false jumps
-                        if (playerBufferState.position > 0 && position - playerBufferState.position > 1.5 && !playerBufferState.inAdBreak) {
+                        if (playerBufferState.position > 0 && position - playerBufferState.position > 5 && !playerBufferState.inAdBreak) {
                             console.log('[AD DEBUG] Position jumped ' + (position - playerBufferState.position).toFixed(1) + 's — starting drift correction');
                             startDriftCorrection(player.getHTMLVideoElement?.());
                         }
