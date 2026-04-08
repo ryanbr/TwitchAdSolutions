@@ -1,5 +1,19 @@
 ## Unreleased
 
+## v53.0.0
+
+### Bug Fixes
+- Remove bare `maf-ad` from ad signifiers — over-matched Twitch MAF metadata in non-ad playlists, causing false ad detections every 2-3 minutes (#69). The specific `EXT-X-DATERANGE:CLASS="twitch-maf-ad"` remains for actual MAF ad breaks. Affects vaft and video-swap-new.
+- Extend backup switch grace period to cover ad-end transition — buffer monitor no longer triggers pause/play on the momentary micro-stall when switching back from backup to main stream
+- Raise position jump drift threshold from 1.5s to 5s — small 2-3s jumps are Twitch's own playback-monitor repositioning, not genuine behind-live-edge scenarios
+
+### Performance
+- Replace `.sort()[0]` with O(n) linear scan for HEVC resolution matching — avoids mutating source array
+
+### Debug Logging
+- Log version on script load (`TwitchAdSolutions vaft v40 loading`)
+- Improve conflict detection message with `[AD DEBUG]` prefix and actionable guidance
+
 ## v52.0.0
 
 ### CSAI Handling
