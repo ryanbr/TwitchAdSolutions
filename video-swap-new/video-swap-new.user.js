@@ -1028,7 +1028,7 @@
                 localStorage.setItem(lsKeyMuted, JSON.stringify({default:player.core.state.muted}));
                 localStorage.setItem(lsKeyVolume, player.core.state.volume);
             }
-            if (localStorageHookFailed && player?.core?.state?.quality?.group) {
+            if (player?.core?.state?.quality?.group) {
                 localStorage.setItem(lsKeyQuality, JSON.stringify({default:player.core.state.quality.group}));
             }
         } catch {}
