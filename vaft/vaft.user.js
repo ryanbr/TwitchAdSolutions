@@ -253,8 +253,8 @@
                 this.addEventListener('message', (e) => {
                     if (e.data.key == 'UpdateAdBlockBanner') {
                         updateAdblockBanner(e.data);
-                        // Track when ads first appear (proxy for backup stream switch)
-                        if (e.data.hasAds && !playerBufferState.inAdBreak) {
+                        // Track backup stream switches (start and end of ad break)
+                        if (e.data.hasAds !== !!playerBufferState.inAdBreak) {
                             playerBufferState.lastBackupSwitchAt = Date.now();
                         }
                         playerBufferState.inAdBreak = !!e.data.hasAds;
