@@ -1028,7 +1028,7 @@ twitch-videoad.js text/javascript
                 const state = playerForMonitoringBuffering.state;
                 if (!player.core) {
                     playerForMonitoringBuffering = null;
-                } else if (state.props?.content?.type === 'live' && !player.isPaused() && !player.getHTMLVideoElement()?.ended && playerBufferState.lastFixTime <= Date.now() - PlayerBufferingMinRepeatDelay && !isActivelyStrippingAds && (!playerBufferState.lastReloadAt || Date.now() - playerBufferState.lastReloadAt >= 15000) && (!playerBufferState.lastBackupSwitchAt || Date.now() - playerBufferState.lastBackupSwitchAt >= 10000)) {
+                } else if (state.props?.content?.type === 'live' && !player.isPaused() && !player.getHTMLVideoElement()?.ended && playerBufferState.lastFixTime <= Date.now() - PlayerBufferingMinRepeatDelay && !isActivelyStrippingAds && !playerBufferState.inAdBreak && (!playerBufferState.lastReloadAt || Date.now() - playerBufferState.lastReloadAt >= 15000) && (!playerBufferState.lastBackupSwitchAt || Date.now() - playerBufferState.lastBackupSwitchAt >= 10000)) {
                     const m3u8Url = player.core?.state?.path;
                     if (m3u8Url) {
                       const lastSlash = m3u8Url.lastIndexOf('/');
@@ -1104,8 +1104,8 @@ twitch-videoad.js text/javascript
                             playerBufferState.recoveryReloadUsed = false;
                         }
                         // Detect position jump (native gap recovery) — drift to catch up
-                        // Skip during ad breaks: backup stream switching causes buffer gaps that trigger false jumps
-                        if (playerBufferState.position > 0 && position - playerBufferState.position > 5 && !playerBufferState.inAdBreak) {
+                        // Skip during ad breaks and 10s after: backup stream switching causes buffer gaps that trigger false jumps
+                        if (playerBufferState.position > 0 && position - playerBufferState.position > 5 && !playerBufferState.inAdBreak && (!playerBufferState.lastBackupSwitchAt || Date.now() - playerBufferState.lastBackupSwitchAt >= 10000)) {
                             console.log('[AD DEBUG] Position jumped ' + (position - playerBufferState.position).toFixed(1) + 's — starting drift correction');
                             startDriftCorrection(player.getHTMLVideoElement?.());
                         }
