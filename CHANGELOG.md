@@ -1,5 +1,17 @@
 ## Unreleased
 
+## v57.0.0
+
+### Player Stability
+- Skip buffer monitor and position jump drift during ad breaks — prevents unnecessary pause/play and 1.1x speedup when backup stream buffer is thin (vaft)
+- Add backup switch grace period to position jump drift detection — 10s window after ad-end suppresses false jumps from stream switch buffer gaps (vaft)
+- Reset position tracking on ad-end — fixes race condition where position jump fires before the grace period message arrives from the worker (vaft)
+- Fast-exit backup search on known CSAI-only channels — after 3+ consecutive zero-strip ad breaks, takes first backup immediately instead of cycling all player types (~50ms vs ~2min stall) (vaft)
+
+### Debug Logging
+- Log access token failure response body (first 200 chars) and integrity header status on 403 (all scripts)
+- Log Usher (m3u8 encodings) HTTP failures (all scripts)
+
 ## v56.0.0
 
 ### Bug Fixes

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (video-swap-new)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      1.69
+// @version      1.70
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @description  Multiple solutions for blocking Twitch ads (video-swap-new)
@@ -13,7 +13,7 @@
 // ==/UserScript==
 (function() {
     'use strict';
-    const ourTwitchAdSolutionsVersion = 37;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 38;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: video-swap-new v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');

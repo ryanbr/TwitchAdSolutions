@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      56.0.0
+// @version      57.0.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -13,7 +13,7 @@
 // ==/UserScript==
 (function() {
     'use strict';
-    const ourTwitchAdSolutionsVersion = 43;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 44;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -772,10 +772,9 @@
                                             console.log('[AD DEBUG] Backup stream (' + playerType + ') also has ads');
                                         }
                                     }
-                                    if (isFullyCachedPlayerType) {
-                                        break;
-                                    }
-                                    if (isDoingMinimalRequests || streamInfo.ConsecutiveZeroStripBreaks >= 3) {
+                                    // If backup also has ads, take it immediately — trying other
+                                    // player types won't help (Twitch serves ads across all types)
+                                    if (hasAdTags(m3u8Text) || isFullyCachedPlayerType || isDoingMinimalRequests) {
                                         backupPlayerType = playerType;
                                         backupM3u8 = m3u8Text;
                                         break;
