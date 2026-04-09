@@ -1057,7 +1057,8 @@ twitch-videoad.js text/javascript
                             playerBufferState.recoveryReloadUsed = false;
                         }
                         // Detect position jump (native gap recovery) — drift to catch up
-                        if (playerBufferState.position > 0 && position - playerBufferState.position > 1.5) {
+                        // Skip during ad breaks and 10s after: backup stream switching causes buffer gaps that trigger false jumps
+                        if (playerBufferState.position > 0 && position - playerBufferState.position > 5 && !playerBufferState.inAdBreak && (!playerBufferState.lastBackupSwitchAt || Date.now() - playerBufferState.lastBackupSwitchAt >= 10000)) {
                             console.log('[AD DEBUG] Position jumped ' + (position - playerBufferState.position).toFixed(1) + 's — starting drift correction');
                             startDriftCorrection(player.getHTMLVideoElement?.());
                         }
