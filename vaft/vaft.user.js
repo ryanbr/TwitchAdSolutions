@@ -736,9 +736,13 @@
                                 const encodingsM3u8Response = await realFetch(urlInfo.href);
                                 if (encodingsM3u8Response.status === 200) {
                                     encodingsM3u8 = streamInfo.BackupEncodingsM3U8Cache[playerType] = await encodingsM3u8Response.text();
+                                } else {
+                                    console.log('[AD DEBUG] Usher HTTP ' + encodingsM3u8Response.status + ' for ' + realPlayerType);
                                 }
                             } else {
-                                console.log('[AD DEBUG] Access token HTTP ' + accessTokenResponse.status + ' for ' + realPlayerType);
+                                let errorBody = '';
+                                try { errorBody = ' — ' + (await accessTokenResponse.text()).substring(0, 200); } catch {}
+                                console.log('[AD DEBUG] Access token HTTP ' + accessTokenResponse.status + ' for ' + realPlayerType + (accessTokenResponse.status === 403 ? ' (integrity: ' + (ClientIntegrityHeader ? 'present' : 'missing') + ')' : '') + errorBody);
                                 streamInfo.FailedBackupPlayerTypes.set(realPlayerType, Date.now());
                             }
                         } catch (err) {
