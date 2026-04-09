@@ -9,6 +9,7 @@ Functions serialized via `.toString()` into the Web Worker blob CANNOT reference
 - Declare variables in `declareOptions()` (also serialized) or in the inline blob template literal
 - To pass window-scope values to the worker, inject after `declareOptions(self)`: e.g. `ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};`
 - Regex hoisting or referencing outer-scope variables from these functions causes `ReferenceError`
+- `AdSignifierRegex` and `AdSignifiers` array must be kept in sync — both are in `declareOptions()`, 2 lines apart. `hasAdTags()` uses the regex, `getMatchedAdSignifiers()` and `stripAdSegments()` use the array. If one is updated without the other, ad detection will be inconsistent.
 
 ## Files
 
