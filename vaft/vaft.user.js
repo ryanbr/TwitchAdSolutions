@@ -772,10 +772,9 @@
                                             console.log('[AD DEBUG] Backup stream (' + playerType + ') also has ads');
                                         }
                                     }
-                                    if (isFullyCachedPlayerType) {
-                                        break;
-                                    }
-                                    if (isDoingMinimalRequests || streamInfo.ConsecutiveZeroStripBreaks >= 3) {
+                                    // If backup also has ads, take it immediately — trying other
+                                    // player types won't help (Twitch serves ads across all types)
+                                    if (hasAdTags(m3u8Text) || isFullyCachedPlayerType || isDoingMinimalRequests) {
                                         backupPlayerType = playerType;
                                         backupM3u8 = m3u8Text;
                                         break;
