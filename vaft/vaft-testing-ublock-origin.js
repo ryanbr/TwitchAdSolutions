@@ -30,7 +30,7 @@ twitch-videoad.js text/javascript
         scope.ReloadCooldownSeconds = 30;// Minimum seconds between reloads — breaks CSAI cascades triggered by reload
         scope.DisableReloadCap = false;// If true, buffer monitor reloads unlimited times (pre-v47 behavior, risk of cascade)
         scope.DriftCorrectionRate = 1.1;// Playback rate for catching up to live edge after reload (0 = disable drift correction)
-        scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
+        scope.PinBackupPlayerType = true;// Remember which backup player type worked and try it first on next ad break
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
         scope.HasTriggeredPlayerReload = false;
@@ -129,11 +129,14 @@ twitch-videoad.js text/javascript
     let injectedBlobUrl = null;
     function hookWindowWorker() {
         // Prevent Twitch from revoking our injected worker blob URL
-        const originalRevokeObjectURL = URL.revokeObjectURL;
-        URL.revokeObjectURL = function(url) {
-            if (url === injectedBlobUrl) return;
-            return originalRevokeObjectURL.call(this, url);
-        };
+        if (!URL.revokeObjectURL.__tasMasked) {
+            const originalRevokeObjectURL = URL.revokeObjectURL;
+            URL.revokeObjectURL = maskAsNative(function(url) {
+                if (url === injectedBlobUrl) return;
+                return originalRevokeObjectURL.call(this, url);
+            }, 'revokeObjectURL');
+            URL.revokeObjectURL.__tasMasked = true;
+        }
         const reinsert = getWorkersForReinsert(window.Worker);
         const newWorker = class Worker extends (getCleanWorker(window.Worker) || window.Worker) {
             constructor(twitchBlobUrl, options) {
@@ -800,9 +803,8 @@ twitch-videoad.js text/javascript
                 // Skip reload entirely — avoids CSAI cascade on ad-heavy channels.
                 // Clearing the flag makes next m3u8 poll serve main stream seamlessly.
                 if (!hadStrippedSegments) {
-                    console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without reload');
+                    console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
                     streamInfo.IsUsingModifiedM3U8 = false;
-                    postMessage({ key: 'PauseResumePlayer' });
                 } else {
                 // Reload if backup was used AND segments were stripped (need clean state). Otherwise, respect ReloadPlayerAfterAd + cooldown.
                 const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && (hadStrippedSegments || !tooSoonSinceLastReload));
@@ -1249,7 +1251,7 @@ twitch-videoad.js text/javascript
                     localStorage.setItem(lsKeyMuted, JSON.stringify({default:player.core.state.muted}));
                     localStorage.setItem(lsKeyVolume, player.core.state.volume);
                 }
-                if (localStorageHookFailed && player?.core?.state?.quality?.group) {
+                if (player?.core?.state?.quality?.group) {
                     localStorage.setItem(lsKeyQuality, JSON.stringify({default:player.core.state.quality.group}));
                 }
             } catch {}

@@ -22,7 +22,7 @@
     window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
     // Configuration and state shared between window and worker scopes
     function declareOptions(scope) {
-        scope.AdSignifiers = ['stitched', 'stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'EXT-X-DATERANGE:CLASS="twitch-stream-source"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-ad-quartile"'];
+        scope.AdSignifiers = ['stitched', 'stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'EXT-X-DATERANGE:CLASS="twitch-stream-source"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-ad-quartile"', 'SCTE35-OUT'];
         scope.ClientID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
         scope.BackupPlayerTypes = [
             'embed',//Source
@@ -129,7 +129,17 @@
             || workerStringReinsert.some((x) => workerString.includes(x));
     }
     // Replace window.Worker to intercept Twitch's video worker and inject ad-blocking logic
+    let injectedBlobUrl = null;
     function hookWindowWorker() {
+        // Prevent Twitch from revoking our injected worker blob URL
+        if (!URL.revokeObjectURL.__tasMasked) {
+            const originalRevokeObjectURL = URL.revokeObjectURL;
+            URL.revokeObjectURL = maskAsNative(function(url) {
+                if (url === injectedBlobUrl) return;
+                return originalRevokeObjectURL.call(this, url);
+            }, 'revokeObjectURL');
+            URL.revokeObjectURL.__tasMasked = true;
+        }
         const reinsert = getWorkersForReinsert(window.Worker);
         const newWorker = class Worker extends (getCleanWorker(window.Worker) || window.Worker) {
             constructor(twitchBlobUrl, options) {
@@ -213,7 +223,8 @@
                     hookWorkerFetch();
                     eval(workerString);
                 `;
-                super(URL.createObjectURL(new Blob([newBlobStr])), options);
+                injectedBlobUrl = URL.createObjectURL(new Blob([newBlobStr]));
+                super(injectedBlobUrl, options);
                 twitchWorkers.length = 0;
                 twitchWorkers.push(this);
                 this.addEventListener('message', (e) => {
@@ -681,9 +692,8 @@
             // CSAI-only ad break: backup was used but no segments were stripped.
             // Skip reload entirely — avoids CSAI cascade on ad-heavy channels.
             if (!hadStrippedSegments) {
-                console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without reload');
+                console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
                 streamInfo.IsUsingModifiedM3U8 = false;
-                postMessage({ key: 'PauseResumePlayer' });
             } else {
             // Reload if backup was used AND segments were stripped (need clean state). Otherwise, respect ReloadPlayerAfterAd + cooldown.
             const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && (hadStrippedSegments || !tooSoonSinceLastReload));
@@ -798,6 +808,30 @@
     };
     // Poll the player state to detect and fix buffering caused by ad stream switching
     function monitorPlayerBuffering() {
+        // Fresh player lookup every tick (avoids stale ref when Twitch restarts its own player)
+        playerForMonitoringBuffering = null;
+        {
+            const playerAndState = getPlayerAndState();
+            if (playerAndState && playerAndState.player && playerAndState.state) {
+                playerForMonitoringBuffering = {
+                    player: playerAndState.player,
+                    state: playerAndState.state
+                };
+                const video = playerAndState.player.getHTMLVideoElement?.();
+                if (video && !video.__tasIntentHooked) {
+                    video.__tasIntentHooked = true;
+                    video.addEventListener('pause', () => {
+                        if (!playerBufferState.weJustPaused || (Date.now() - playerBufferState.weJustPaused) > 2000) {
+                            playerBufferState.userPauseIntent = true;
+                        }
+                    });
+                    video.addEventListener('play', () => {
+                        playerBufferState.userPauseIntent = false;
+                        playerBufferState.loggedPauseIntent = false;
+                    });
+                }
+            }
+        }
         if (playerForMonitoringBuffering) {
             try {
                 const player = playerForMonitoringBuffering.player;
@@ -872,15 +906,6 @@
             } catch (err) {
                 console.error('error when monitoring player for buffering: ' + err);
                 playerForMonitoringBuffering = null;
-            }
-        }
-        if (!playerForMonitoringBuffering) {
-            const playerAndState = getPlayerAndState();
-            if (playerAndState && playerAndState.player && playerAndState.state) {
-                playerForMonitoringBuffering = {
-                    player: playerAndState.player,
-                    state: playerAndState.state
-                };
             }
         }
         const isLive = playerForMonitoringBuffering?.state?.props?.content?.type === 'live';
@@ -1082,7 +1107,7 @@
                     localStorage.setItem(lsKeyMuted, JSON.stringify({default:player.core.state.muted}));
                     localStorage.setItem(lsKeyVolume, player.core.state.volume);
                 }
-                if (localStorageHookFailed && player?.core?.state?.quality?.group) {
+                if (player?.core?.state?.quality?.group) {
                     localStorage.setItem(lsKeyQuality, JSON.stringify({default:player.core.state.quality.group}));
                 }
             } catch {}
