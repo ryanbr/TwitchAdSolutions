@@ -688,6 +688,33 @@
                     key: 'ReloadPlayer'
                 });
             }
+            // CSAI fast path: if all segments in the main stream are live, skip backup search.
+            // CSAI ads are delivered outside the m3u8 — the main stream segments are clean.
+            // Just strip tracking URLs and return the main stream directly, avoiding the
+            // backup stream switch that causes a 20-40s rebuffer gap.
+            const mainStreamLines = textStr.split(/\r?\n/);
+            let hasNonLiveSegment = false;
+            for (let i = 0; i < mainStreamLines.length; i++) {
+                if (mainStreamLines[i].startsWith('#EXTINF') && !mainStreamLines[i].includes(',live')) {
+                    hasNonLiveSegment = true;
+                    break;
+                }
+            }
+            if (!hasNonLiveSegment && !streamInfo.IsUsingModifiedM3U8) {
+                console.log('[AD DEBUG] CSAI fast path — all segments live, skipping backup search');
+                if (IsAdStrippingEnabled) {
+                    textStr = stripAdSegments(textStr, false, streamInfo);
+                }
+                postMessage({
+                    key: 'UpdateAdBlockBanner',
+                    isMidroll: streamInfo.IsMidroll,
+                    hasAds: streamInfo.IsShowingAd,
+                    isStrippingAdSegments: streamInfo.IsStrippingAdSegments,
+                    numStrippedAdSegments: streamInfo.NumStrippedAdSegments,
+                    activeBackupPlayerType: null
+                });
+                return textStr;
+            }
             const backupSearchStart = Date.now();
             let backupPlayerType = null;
             let backupM3u8 = null;
