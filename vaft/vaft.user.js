@@ -573,6 +573,7 @@
         // If all segments were stripped, restore cached recovery segments to prevent black screen
         if (hasStrippedAdSegments && liveSegments.length === 0 && streamInfo.RecoverySegments && streamInfo.RecoverySegments.length > 0) {
             streamInfo.ConsecutiveAllStrippedPolls = (streamInfo.ConsecutiveAllStrippedPolls || 0) + 1;
+            streamInfo.TotalAllStrippedPolls = (streamInfo.TotalAllStrippedPolls || 0) + 1;
             console.log('[AD DEBUG] All segments stripped — restoring ' + streamInfo.RecoverySegments.length + ' recovery segments');
             if (streamInfo.RecoveryStartSeq !== undefined) {
                 for (let j = 0; j < lines.length; j++) {
@@ -825,10 +826,6 @@
                 textStr = stripAdSegments(textStr, stripHevc, streamInfo);
             } else if (!backupM3u8) {
                 console.log('[AD DEBUG] Ad stripping disabled and no backup — ads WILL show');
-            }
-            // Track total all-stripped polls per ad break (separate counter that doesn't reset on temp recovery)
-            if (streamInfo.IsStrippingAdSegments && !textStr.includes(',live')) {
-                streamInfo.TotalAllStrippedPolls = (streamInfo.TotalAllStrippedPolls || 0) + 1;
             }
             // Log reload outcome on the poll after early reload triggered
             if (streamInfo.EarlyReloadAwaitingResult) {
