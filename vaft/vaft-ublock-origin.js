@@ -656,6 +656,8 @@ twitch-videoad.js text/javascript
                 streamInfo.EarlyReloadTriggered = false;
                 streamInfo.EarlyReloadCount = 0;
                 streamInfo.EarlyReloadAtPoll = 0;
+                // Track high-confidence ad markers to distinguish real ads from false-positive signifier matches
+                streamInfo.HasConfirmedAdAttrs = textStr.includes('X-TV-TWITCH-AD-AD-SESSION-ID') || textStr.includes('X-TV-TWITCH-AD-RADS-TOKEN');
                 console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', pod: ' + podLength + ' ad(s) (~' + (podLength * 30) + 's expected), signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
                 postMessage({
                     key: 'UpdateAdBlockBanner',
@@ -864,12 +866,15 @@ twitch-videoad.js text/javascript
                     console.log('[AD DEBUG] Ad break stats: ' + streamInfo.TotalAllStrippedPolls + ' all-stripped polls (~' + freezeDuration + 's freeze)' + reloadInfo);
                 }
                 const hadStrippedSegments = streamInfo.NumStrippedAdSegments > 0;
-                if (!hadStrippedSegments) {
+                // Only count toward false-positive guard if the m3u8 lacked high-confidence ad markers.
+                // Confirmed ads (with X-TV-TWITCH-AD-AD-SESSION-ID etc.) that produce 0 strips are real ads
+                // we successfully avoided via clean backup — not false positives.
+                if (!hadStrippedSegments && !streamInfo.HasConfirmedAdAttrs) {
                     streamInfo.ConsecutiveZeroStripBreaks++;
                     if (streamInfo.ConsecutiveZeroStripBreaks >= 3) {
-                        console.log('[AD DEBUG] Warning: ' + streamInfo.ConsecutiveZeroStripBreaks + ' consecutive ad breaks with 0 segments stripped — possible false positive from ad signifiers');
+                        console.log('[AD DEBUG] Warning: ' + streamInfo.ConsecutiveZeroStripBreaks + ' consecutive unconfirmed ad breaks with 0 segments stripped — possible false positive from ad signifiers');
                     }
-                } else {
+                } else if (hadStrippedSegments) {
                     streamInfo.ConsecutiveZeroStripBreaks = 0;
                 }
                 streamInfo.IsShowingAd = false;
