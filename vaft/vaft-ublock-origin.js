@@ -30,6 +30,7 @@ twitch-videoad.js text/javascript
         scope.ReloadCooldownSeconds = 30;// Minimum seconds between reloads — breaks CSAI cascades triggered by reload
         scope.DisableReloadCap = false;// If true, buffer monitor reloads unlimited times (pre-v47 behavior, risk of cascade)
         scope.DriftCorrectionRate = 1.1;// Playback rate for catching up to live edge after reload (0 = disable drift correction)
+        scope.EarlyReloadPollThreshold = 5;// Number of consecutive all-stripped polls before triggering early reload (each poll ~2s, so 5 = ~10s, 3 = ~6s, 10 = ~20s; 0 = disable)
         scope.PinBackupPlayerType = true;// Remember which backup player type worked and try it first on next ad break
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
@@ -198,6 +199,7 @@ twitch-videoad.js text/javascript
                     ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};
                     ReloadCooldownSeconds = ${ReloadCooldownSeconds};
                     DisableReloadCap = ${DisableReloadCap};
+                    EarlyReloadPollThreshold = ${EarlyReloadPollThreshold};
                     PinBackupPlayerType = ${PinBackupPlayerType};
                     ForceAccessTokenPlayerType = '${ForceAccessTokenPlayerType}';
                     GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
@@ -559,6 +561,8 @@ twitch-videoad.js text/javascript
         }
         // If all segments were stripped, restore cached recovery segments to prevent black screen
         if (hasStrippedAdSegments && liveSegments.length === 0 && streamInfo.RecoverySegments && streamInfo.RecoverySegments.length > 0) {
+            streamInfo.ConsecutiveAllStrippedPolls = (streamInfo.ConsecutiveAllStrippedPolls || 0) + 1;
+            streamInfo.TotalAllStrippedPolls = (streamInfo.TotalAllStrippedPolls || 0) + 1;
             console.log('[AD DEBUG] All segments stripped — restoring ' + streamInfo.RecoverySegments.length + ' recovery segments');
             if (streamInfo.RecoveryStartSeq !== undefined) {
                 for (let j = 0; j < lines.length; j++) {
@@ -572,6 +576,9 @@ twitch-videoad.js text/javascript
                 lines.push(streamInfo.RecoverySegments[j].extinf);
                 lines.push(streamInfo.RecoverySegments[j].url);
             }
+        } else if (liveSegments.length > 0) {
+            // Reset freeze counter when live segments are available
+            streamInfo.ConsecutiveAllStrippedPolls = 0;
         }
         streamInfo.IsStrippingAdSegments = hasStrippedAdSegments;
         const now = Date.now();
@@ -641,7 +648,15 @@ twitch-videoad.js text/javascript
             streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
             if (!streamInfo.IsShowingAd) {
                 streamInfo.IsShowingAd = true;
-                console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
+                streamInfo.AdBreakStartedAt = Date.now();
+                const podLengthMatch = textStr.match(/X-TV-TWITCH-AD-POD-LENGTH="(\d+)"/);
+                const podLength = podLengthMatch ? parseInt(podLengthMatch[1], 10) : 1;
+                // Reset early-reload state for new ad break; allow up to one early reload per ad in pod
+                streamInfo.PodLength = podLength;
+                streamInfo.EarlyReloadTriggered = false;
+                streamInfo.EarlyReloadCount = 0;
+                streamInfo.EarlyReloadAtPoll = 0;
+                console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', pod: ' + podLength + ' ad(s) (~' + (podLength * 30) + 's expected), signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
                 postMessage({
                     key: 'UpdateAdBlockBanner',
                     isMidroll: streamInfo.IsMidroll,
@@ -807,6 +822,31 @@ twitch-videoad.js text/javascript
             } else if (!backupM3u8) {
                 console.log('[AD DEBUG] Ad stripping disabled and no backup — ads WILL show');
             }
+            // Log reload outcome on the poll after early reload triggered
+            if (streamInfo.EarlyReloadAwaitingResult) {
+                streamInfo.EarlyReloadAwaitingResult = false;
+                if (textStr.includes(',live') && streamInfo.IsStrippingAdSegments) {
+                    console.log('[AD DEBUG] Early reload result: partial — some live segments returned');
+                } else if (!streamInfo.IsStrippingAdSegments) {
+                    console.log('[AD DEBUG] Early reload result: clean — freeze ended');
+                    // Reset trigger flag so subsequent freezes within the same pod can re-fire (bounded by EarlyReloadCount/PodLength)
+                    streamInfo.EarlyReloadTriggered = false;
+                } else {
+                    console.log('[AD DEBUG] Early reload result: still ads — continuing recovery loop');
+                }
+            }
+            // Early reload during prolonged freeze: if we've been looping recovery segments
+            // for N+ polls (~Nx2s), trigger a reload to attempt fresh content. Bounded to one
+            // reload per ad in the pod (e.g. 2-ad pod = up to 2 early reloads).
+            const maxEarlyReloads = Math.max(1, streamInfo.PodLength || 1);
+            if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= EarlyReloadPollThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < maxEarlyReloads) {
+                streamInfo.EarlyReloadTriggered = true;
+                streamInfo.EarlyReloadAwaitingResult = true;
+                streamInfo.EarlyReloadCount = (streamInfo.EarlyReloadCount || 0) + 1;
+                streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
+                console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls (~' + (streamInfo.ConsecutiveAllStrippedPolls * 2) + 's freeze) [' + streamInfo.EarlyReloadCount + '/' + maxEarlyReloads + ']');
+                postMessage({ key: 'ReloadPlayer' });
+            }
         } else if (streamInfo.IsShowingAd) {
             streamInfo.CleanPlaylistCount++;
             // Check if the current playlist has live segments — if not, backup stream is dead
@@ -816,7 +856,13 @@ twitch-videoad.js text/javascript
                 if (!hasLiveSegments) {
                     console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
                 }
-                console.log('Finished blocking ads — stripped ' + streamInfo.NumStrippedAdSegments + ' ad segments');
+                const adBreakDurationSec = streamInfo.AdBreakStartedAt ? ((Date.now() - streamInfo.AdBreakStartedAt) / 1000).toFixed(1) : '?';
+                console.log('Finished blocking ads — stripped ' + streamInfo.NumStrippedAdSegments + ' ad segments, duration: ' + adBreakDurationSec + 's');
+                if (streamInfo.TotalAllStrippedPolls > 0) {
+                    const freezeDuration = streamInfo.TotalAllStrippedPolls * 2;
+                    const reloadInfo = streamInfo.EarlyReloadAtPoll ? ', early reload at poll ' + streamInfo.EarlyReloadAtPoll : '';
+                    console.log('[AD DEBUG] Ad break stats: ' + streamInfo.TotalAllStrippedPolls + ' all-stripped polls (~' + freezeDuration + 's freeze)' + reloadInfo);
+                }
                 const hadStrippedSegments = streamInfo.NumStrippedAdSegments > 0;
                 if (!hadStrippedSegments) {
                     streamInfo.ConsecutiveZeroStripBreaks++;
@@ -834,6 +880,11 @@ twitch-videoad.js text/javascript
                 streamInfo.FailedBackupPlayerTypes.clear();
                 if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
                 streamInfo.CleanPlaylistCount = 0;
+                streamInfo.ConsecutiveAllStrippedPolls = 0;
+                streamInfo.EarlyReloadTriggered = false;
+                streamInfo.EarlyReloadAwaitingResult = false;
+                streamInfo.EarlyReloadAtPoll = 0;
+                streamInfo.TotalAllStrippedPolls = 0;
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
@@ -1290,6 +1341,14 @@ twitch-videoad.js text/javascript
             return;
         }
         if (isReload) {
+            // Skip reload if the player is already healthy — avoids disrupting smooth playback
+            const video = player.getHTMLVideoElement?.();
+            if (video && video.readyState >= 3 && !video.paused && !video.ended) {
+                console.log('[AD DEBUG] Skipping reload — player healthy (readyState=' + video.readyState + ', playing)');
+                return;
+            }
+        }
+        if (isReload) {
             const lsKeyQuality = 'video-quality';
             const lsKeyMuted = 'video-muted';
             const lsKeyVolume = 'volume';
@@ -1546,6 +1605,10 @@ twitch-videoad.js text/javascript
         const lsDriftRate = parseFloat(localStorage.getItem('twitchAdSolutions_driftCorrectionRate'));
         if (!isNaN(lsDriftRate) && lsDriftRate >= 0) {
             DriftCorrectionRate = lsDriftRate;
+        }
+        const lsEarlyReload = parseInt(localStorage.getItem('twitchAdSolutions_earlyReloadPollThreshold'));
+        if (!isNaN(lsEarlyReload) && lsEarlyReload >= 0) {
+            EarlyReloadPollThreshold = lsEarlyReload;
         }
         const lsPlayerType = localStorage.getItem('twitchAdSolutions_playerType');
         if (lsPlayerType !== null) {
