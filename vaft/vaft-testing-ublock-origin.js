@@ -30,6 +30,7 @@ twitch-videoad.js text/javascript
         scope.ReloadCooldownSeconds = 30;// Minimum seconds between reloads — breaks CSAI cascades triggered by reload
         scope.DisableReloadCap = false;// If true, buffer monitor reloads unlimited times (pre-v47 behavior, risk of cascade)
         scope.DriftCorrectionRate = 1.1;// Playback rate for catching up to live edge after reload (0 = disable drift correction)
+        scope.EarlyReloadPollThreshold = 5;// Number of consecutive all-stripped polls before triggering early reload (~10s, 0 = disable)
         scope.PinBackupPlayerType = true;// Remember which backup player type worked and try it first on next ad break
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
@@ -180,6 +181,7 @@ twitch-videoad.js text/javascript
                     ReloadCooldownSeconds = ${ReloadCooldownSeconds};
                     DisableReloadCap = ${DisableReloadCap};
                     PinBackupPlayerType = ${PinBackupPlayerType};
+                    EarlyReloadPollThreshold = ${EarlyReloadPollThreshold};
                     ForceAccessTokenPlayerType = '${ForceAccessTokenPlayerType}';
                     GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
                     AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
@@ -873,7 +875,7 @@ twitch-videoad.js text/javascript
             }
             // Early reload during prolonged freeze: if we've been looping recovery segments
             // for 5+ polls (~10s), trigger a reload to attempt fresh content. Once per ad break.
-            if ((streamInfo.ConsecutiveAllStrippedPolls || 0) >= 5 && !streamInfo.EarlyReloadTriggered) {
+            if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= EarlyReloadPollThreshold && !streamInfo.EarlyReloadTriggered) {
                 streamInfo.EarlyReloadTriggered = true;
                 streamInfo.EarlyReloadAwaitingResult = true;
                 streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
@@ -1630,6 +1632,10 @@ twitch-videoad.js text/javascript
         const lsDriftRate = parseFloat(localStorage.getItem('twitchAdSolutions_driftCorrectionRate'));
         if (!isNaN(lsDriftRate) && lsDriftRate >= 0) {
             DriftCorrectionRate = lsDriftRate;
+        }
+        const lsEarlyReload = parseInt(localStorage.getItem('twitchAdSolutions_earlyReloadPollThreshold'));
+        if (!isNaN(lsEarlyReload) && lsEarlyReload >= 0) {
+            EarlyReloadPollThreshold = lsEarlyReload;
         }
         const lsPlayerType = localStorage.getItem('twitchAdSolutions_playerType');
         if (lsPlayerType !== null) {
