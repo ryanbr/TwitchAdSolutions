@@ -570,6 +570,7 @@
         }
         // If all segments were stripped, restore cached recovery segments to prevent black screen
         if (hasStrippedAdSegments && liveSegments.length === 0 && streamInfo.RecoverySegments && streamInfo.RecoverySegments.length > 0) {
+            streamInfo.ConsecutiveAllStrippedPolls = (streamInfo.ConsecutiveAllStrippedPolls || 0) + 1;
             console.log('[AD DEBUG] All segments stripped — restoring ' + streamInfo.RecoverySegments.length + ' recovery segments');
             if (streamInfo.RecoveryStartSeq !== undefined) {
                 for (let j = 0; j < lines.length; j++) {
@@ -583,6 +584,9 @@
                 lines.push(streamInfo.RecoverySegments[j].extinf);
                 lines.push(streamInfo.RecoverySegments[j].url);
             }
+        } else if (liveSegments.length > 0) {
+            // Reset freeze counter when live segments are available
+            streamInfo.ConsecutiveAllStrippedPolls = 0;
         }
         streamInfo.IsStrippingAdSegments = hasStrippedAdSegments;
         const now = Date.now();
@@ -652,7 +656,9 @@
             streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
             if (!streamInfo.IsShowingAd) {
                 streamInfo.IsShowingAd = true;
-                console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
+                const podLengthMatch = textStr.match(/X-TV-TWITCH-AD-POD-LENGTH="(\d+)"/);
+                const podLength = podLengthMatch ? parseInt(podLengthMatch[1], 10) : 1;
+                console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', pod: ' + podLength + ' ad(s) (~' + (podLength * 30) + 's expected), signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
                 postMessage({
                     key: 'UpdateAdBlockBanner',
                     isMidroll: streamInfo.IsMidroll,
@@ -818,6 +824,30 @@
             } else if (!backupM3u8) {
                 console.log('[AD DEBUG] Ad stripping disabled and no backup — ads WILL show');
             }
+            // Track total all-stripped polls per ad break (separate counter that doesn't reset on temp recovery)
+            if (streamInfo.IsStrippingAdSegments && !textStr.includes(',live')) {
+                streamInfo.TotalAllStrippedPolls = (streamInfo.TotalAllStrippedPolls || 0) + 1;
+            }
+            // Log reload outcome on the poll after early reload triggered
+            if (streamInfo.EarlyReloadAwaitingResult) {
+                streamInfo.EarlyReloadAwaitingResult = false;
+                if (textStr.includes(',live') && streamInfo.IsStrippingAdSegments) {
+                    console.log('[AD DEBUG] Early reload result: partial — some live segments returned');
+                } else if (!streamInfo.IsStrippingAdSegments) {
+                    console.log('[AD DEBUG] Early reload result: clean — freeze ended');
+                } else {
+                    console.log('[AD DEBUG] Early reload result: still ads — continuing recovery loop');
+                }
+            }
+            // Early reload during prolonged freeze: if we've been looping recovery segments
+            // for 5+ polls (~10s), trigger a reload to attempt fresh content. Once per ad break.
+            if ((streamInfo.ConsecutiveAllStrippedPolls || 0) >= 5 && !streamInfo.EarlyReloadTriggered) {
+                streamInfo.EarlyReloadTriggered = true;
+                streamInfo.EarlyReloadAwaitingResult = true;
+                streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
+                console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls (~' + (streamInfo.ConsecutiveAllStrippedPolls * 2) + 's freeze)');
+                postMessage({ key: 'ReloadPlayer' });
+            }
         } else if (streamInfo.IsShowingAd) {
             streamInfo.CleanPlaylistCount++;
             // Check if the current playlist has live segments — if not, backup stream is dead
@@ -828,6 +858,11 @@
                     console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
                 }
                 console.log('Finished blocking ads — stripped ' + streamInfo.NumStrippedAdSegments + ' ad segments');
+                if (streamInfo.TotalAllStrippedPolls > 0) {
+                    const freezeDuration = streamInfo.TotalAllStrippedPolls * 2;
+                    const reloadInfo = streamInfo.EarlyReloadAtPoll ? ', early reload at poll ' + streamInfo.EarlyReloadAtPoll : '';
+                    console.log('[AD DEBUG] Ad break stats: ' + streamInfo.TotalAllStrippedPolls + ' all-stripped polls (~' + freezeDuration + 's freeze)' + reloadInfo);
+                }
                 const hadStrippedSegments = streamInfo.NumStrippedAdSegments > 0;
                 if (!hadStrippedSegments) {
                     streamInfo.ConsecutiveZeroStripBreaks++;
@@ -845,6 +880,11 @@
                 streamInfo.FailedBackupPlayerTypes.clear();
                 if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
                 streamInfo.CleanPlaylistCount = 0;
+                streamInfo.ConsecutiveAllStrippedPolls = 0;
+                streamInfo.EarlyReloadTriggered = false;
+                streamInfo.EarlyReloadAwaitingResult = false;
+                streamInfo.EarlyReloadAtPoll = 0;
+                streamInfo.TotalAllStrippedPolls = 0;
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
