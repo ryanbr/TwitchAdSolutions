@@ -5,6 +5,7 @@
 ### Chrome / Edge
 1. Press `F12` or `Ctrl+Shift+J` (Windows/Linux) / `Cmd+Option+J` (Mac)
 2. Click the **Console** tab
+3. Change from `Default` to INFO only to just show our Twitch logs
 
 ### Firefox
 1. Press `F12` or `Ctrl+Shift+K` (Windows/Linux) / `Cmd+Option+K` (Mac)
