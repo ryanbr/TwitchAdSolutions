@@ -428,10 +428,23 @@
     function notifyAdComplete(textStr) {
         try {
             const matches = textStr.match(/#EXT-X-DATERANGE:(ID="stitched-ad-[^\n]+)\n/);
-            if (!matches || matches.length <= 1) return;
+            if (!matches || matches.length <= 1) {
+                if (!notifyAdComplete.loggedNoMatch) {
+                    notifyAdComplete.loggedNoMatch = true;
+                    const dateRangeLine = textStr.match(/#EXT-X-DATERANGE:[^\n]{0,200}/);
+                    console.log('[AD DEBUG] notifyAdComplete: no stitched-ad DATERANGE match. Sample DATERANGE: ' + (dateRangeLine ? dateRangeLine[0] : 'none found'));
+                }
+                return;
+            }
             const attr = parseAttributes(matches[1]);
             const radToken = attr['X-TV-TWITCH-AD-RADS-TOKEN'];
-            if (!radToken) return;
+            if (!radToken) {
+                if (!notifyAdComplete.loggedNoToken) {
+                    notifyAdComplete.loggedNoToken = true;
+                    console.log('[AD DEBUG] notifyAdComplete: matched DATERANGE but no RADS token. Attributes: ' + Object.keys(attr).join(', '));
+                }
+                return;
+            }
             const baseData = {
                 stitched: true,
                 ad_id: attr['X-TV-TWITCH-AD-ADVERTISER-ID'] || '',
