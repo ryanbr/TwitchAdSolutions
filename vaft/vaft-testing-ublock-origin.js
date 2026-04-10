@@ -573,6 +573,7 @@ twitch-videoad.js text/javascript
         }
         // If all segments were stripped, restore cached recovery segments to prevent black screen
         if (hasStrippedAdSegments && liveSegments.length === 0 && streamInfo.RecoverySegments && streamInfo.RecoverySegments.length > 0) {
+            streamInfo.ConsecutiveAllStrippedPolls = (streamInfo.ConsecutiveAllStrippedPolls || 0) + 1;
             console.log('[AD DEBUG] All segments stripped — restoring ' + streamInfo.RecoverySegments.length + ' recovery segments');
             if (streamInfo.RecoveryStartSeq !== undefined) {
                 for (let j = 0; j < lines.length; j++) {
@@ -586,6 +587,9 @@ twitch-videoad.js text/javascript
                 lines.push(streamInfo.RecoverySegments[j].extinf);
                 lines.push(streamInfo.RecoverySegments[j].url);
             }
+        } else if (liveSegments.length > 0) {
+            // Reset freeze counter when live segments are available
+            streamInfo.ConsecutiveAllStrippedPolls = 0;
         }
         streamInfo.IsStrippingAdSegments = hasStrippedAdSegments;
         const now = Date.now();
@@ -850,6 +854,13 @@ twitch-videoad.js text/javascript
             } else if (!backupM3u8) {
                 console.log('[AD DEBUG] Ad stripping disabled and no backup — ads WILL show');
             }
+            // Early reload during prolonged freeze: if we've been looping recovery segments
+            // for 5+ polls (~10s), trigger a reload to attempt fresh content. Once per ad break.
+            if ((streamInfo.ConsecutiveAllStrippedPolls || 0) >= 5 && !streamInfo.EarlyReloadTriggered) {
+                streamInfo.EarlyReloadTriggered = true;
+                console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls (~' + (streamInfo.ConsecutiveAllStrippedPolls * 2) + 's freeze)');
+                postMessage({ key: 'ReloadPlayer' });
+            }
         } else if (streamInfo.IsShowingAd) {
             streamInfo.CleanPlaylistCount++;
             // Check if the current playlist has live segments — if not, backup stream is dead
@@ -877,6 +888,8 @@ twitch-videoad.js text/javascript
                 streamInfo.FailedBackupPlayerTypes.clear();
                 if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
                 streamInfo.CleanPlaylistCount = 0;
+                streamInfo.ConsecutiveAllStrippedPolls = 0;
+                streamInfo.EarlyReloadTriggered = false;
                 // Auto-escalate cooldown: if 3+ reloads in last 2 min, triple the cooldown to reduce cascade pressure
                 if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
                 streamInfo.ReloadTimestamps = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000);
