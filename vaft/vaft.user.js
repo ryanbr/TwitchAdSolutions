@@ -1341,6 +1341,14 @@
             return;
         }
         if (isReload) {
+            // Skip reload if the player is already healthy — avoids disrupting smooth playback
+            const video = player.getHTMLVideoElement?.();
+            if (video && video.readyState >= 3 && !video.paused && !video.ended) {
+                console.log('[AD DEBUG] Skipping reload — player healthy (readyState=' + video.readyState + ', playing)');
+                return;
+            }
+        }
+        if (isReload) {
             const lsKeyQuality = 'video-quality';
             const lsKeyMuted = 'video-muted';
             const lsKeyVolume = 'volume';
