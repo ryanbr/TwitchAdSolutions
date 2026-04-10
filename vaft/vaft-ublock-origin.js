@@ -30,7 +30,7 @@ twitch-videoad.js text/javascript
         scope.ReloadCooldownSeconds = 30;// Minimum seconds between reloads — breaks CSAI cascades triggered by reload
         scope.DisableReloadCap = false;// If true, buffer monitor reloads unlimited times (pre-v47 behavior, risk of cascade)
         scope.DriftCorrectionRate = 1.1;// Playback rate for catching up to live edge after reload (0 = disable drift correction)
-        scope.EarlyReloadPollThreshold = 5;// Number of consecutive all-stripped polls before triggering early reload (~10s, 0 = disable)
+        scope.EarlyReloadPollThreshold = 5;// Number of consecutive all-stripped polls before triggering early reload (each poll ~2s, so 5 = ~10s, 3 = ~6s, 10 = ~20s; 0 = disable)
         scope.PinBackupPlayerType = true;// Remember which backup player type worked and try it first on next ad break
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
