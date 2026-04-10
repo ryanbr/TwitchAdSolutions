@@ -651,6 +651,11 @@ twitch-videoad.js text/javascript
                 streamInfo.AdBreakStartedAt = Date.now();
                 const podLengthMatch = textStr.match(/X-TV-TWITCH-AD-POD-LENGTH="(\d+)"/);
                 const podLength = podLengthMatch ? parseInt(podLengthMatch[1], 10) : 1;
+                // Reset early-reload state for new ad break; allow up to one early reload per ad in pod
+                streamInfo.PodLength = podLength;
+                streamInfo.EarlyReloadTriggered = false;
+                streamInfo.EarlyReloadCount = 0;
+                streamInfo.EarlyReloadAtPoll = 0;
                 console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', pod: ' + podLength + ' ad(s) (~' + (podLength * 30) + 's expected), signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
                 postMessage({
                     key: 'UpdateAdBlockBanner',
@@ -824,17 +829,22 @@ twitch-videoad.js text/javascript
                     console.log('[AD DEBUG] Early reload result: partial — some live segments returned');
                 } else if (!streamInfo.IsStrippingAdSegments) {
                     console.log('[AD DEBUG] Early reload result: clean — freeze ended');
+                    // Reset trigger flag so subsequent freezes within the same pod can re-fire (bounded by EarlyReloadCount/PodLength)
+                    streamInfo.EarlyReloadTriggered = false;
                 } else {
                     console.log('[AD DEBUG] Early reload result: still ads — continuing recovery loop');
                 }
             }
             // Early reload during prolonged freeze: if we've been looping recovery segments
-            // for N+ polls (~Nx2s), trigger a reload to attempt fresh content. Once per ad break.
-            if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= EarlyReloadPollThreshold && !streamInfo.EarlyReloadTriggered) {
+            // for N+ polls (~Nx2s), trigger a reload to attempt fresh content. Bounded to one
+            // reload per ad in the pod (e.g. 2-ad pod = up to 2 early reloads).
+            const maxEarlyReloads = Math.max(1, streamInfo.PodLength || 1);
+            if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= EarlyReloadPollThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < maxEarlyReloads) {
                 streamInfo.EarlyReloadTriggered = true;
                 streamInfo.EarlyReloadAwaitingResult = true;
+                streamInfo.EarlyReloadCount = (streamInfo.EarlyReloadCount || 0) + 1;
                 streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
-                console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls (~' + (streamInfo.ConsecutiveAllStrippedPolls * 2) + 's freeze)');
+                console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls (~' + (streamInfo.ConsecutiveAllStrippedPolls * 2) + 's freeze) [' + streamInfo.EarlyReloadCount + '/' + maxEarlyReloads + ']');
                 postMessage({ key: 'ReloadPlayer' });
             }
         } else if (streamInfo.IsShowingAd) {
