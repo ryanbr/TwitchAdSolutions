@@ -189,6 +189,7 @@
                     const pendingFetchRequests = new Map();
                     ${hasAdTags.toString()}
                     ${getMatchedAdSignifiers.toString()}
+                    ${notifyAdComplete.toString()}
                     ${stripAdSegments.toString()}
                     ${getStreamUrlForResolution.toString()}
                     ${processM3U8.toString()}
@@ -497,6 +498,58 @@
     function getMatchedAdSignifiers(textStr) {
         return AdSignifiers.filter((s) => textStr.includes(s));
     }
+    // Spoof ad completion events to Twitch's backend to clear the ad state
+    function notifyAdComplete(textStr) {
+        try {
+            const matches = textStr.match(/#EXT-X-DATERANGE:(ID="stitched-ad-[^\n]+)\n/);
+            if (!matches || matches.length <= 1) {
+                if (!notifyAdComplete.loggedNoMatch) {
+                    notifyAdComplete.loggedNoMatch = true;
+                    const dateRangeLine = textStr.match(/#EXT-X-DATERANGE:[^\n]{0,200}/);
+                    console.log('[AD DEBUG] notifyAdComplete: no stitched-ad DATERANGE match. Sample DATERANGE: ' + (dateRangeLine ? dateRangeLine[0] : 'none found'));
+                }
+                return;
+            }
+            const attr = parseAttributes(matches[1]);
+            const radToken = attr['X-TV-TWITCH-AD-RADS-TOKEN'];
+            if (!radToken) {
+                if (!notifyAdComplete.loggedNoToken) {
+                    notifyAdComplete.loggedNoToken = true;
+                    console.log('[AD DEBUG] notifyAdComplete: matched DATERANGE but no RADS token. Attributes: ' + Object.keys(attr).join(', '));
+                }
+                return;
+            }
+            const baseData = {
+                stitched: true,
+                ad_id: attr['X-TV-TWITCH-AD-ADVERTISER-ID'] || '',
+                roll_type: (attr['X-TV-TWITCH-AD-ROLL-TYPE'] || '').toLowerCase(),
+                creative_id: attr['X-TV-TWITCH-AD-CREATIVE-ID'] || '',
+                order_id: attr['X-TV-TWITCH-AD-ORDER-ID'] || '',
+                line_item_id: attr['X-TV-TWITCH-AD-LINE-ITEM-ID'] || '',
+                player_mute: true,
+                player_volume: 0.0,
+                visible: false,
+                duration: 0
+            };
+            const podLength = parseInt(attr['X-TV-TWITCH-AD-POD-LENGTH'] || '1', 10);
+            for (let podPosition = 0; podPosition < podLength; podPosition++) {
+                const payload = { ...baseData, ad_position: podPosition, total_ads: podLength };
+                const makePacket = (event, extra) => [{
+                    operationName: 'ClientSideAdEventHandling_RecordAdEvent',
+                    variables: { input: { eventName: event, eventPayload: JSON.stringify({ ...payload, ...extra }), radToken } },
+                    extensions: { persistedQuery: { version: 1, sha256Hash: '7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b' } }
+                }];
+                gqlRequest(makePacket('video_ad_impression')).catch(() => {});
+                for (let q = 1; q <= 4; q++) {
+                    gqlRequest(makePacket('video_ad_quartile_complete', { quartile: q })).catch(() => {});
+                }
+                gqlRequest(makePacket('video_ad_pod_complete')).catch(() => {});
+            }
+            console.log('[AD DEBUG] Spoofed ad completion for ' + podLength + ' ad(s) — roll: ' + baseData.roll_type);
+        } catch (err) {
+            console.log('[AD DEBUG] Ad completion spoof failed: ' + err.message);
+        }
+    }
     // Remove ad segments from an m3u8 playlist and cache their URLs for replacement
     function stripAdSegments(textStr, stripAllSegments, streamInfo) {
         let hasStrippedAdSegments = false;
@@ -653,6 +706,7 @@
             if (!streamInfo.IsShowingAd) {
                 streamInfo.IsShowingAd = true;
                 console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
+                notifyAdComplete(textStr);
                 postMessage({
                     key: 'UpdateAdBlockBanner',
                     isMidroll: streamInfo.IsMidroll,
