@@ -1258,6 +1258,35 @@ twitch-videoad.js text/javascript
                 playerForMonitoringBuffering = null;
             }
         }
+        // Loading-circle health check: during an ad strip+recovery loop the normal buffer monitor
+        // is gated off (isActivelyStrippingAds), so a visibly stalled player would otherwise wait
+        // for the worker's poll-based early reload (~10s). This catches the visible stall ~3s after
+        // it starts and triggers a reload directly, eliminating most of the loading-circle window.
+        if (isActivelyStrippingAds && playerForMonitoringBuffering) {
+            try {
+                const player = playerForMonitoringBuffering.player;
+                const video = player?.getHTMLVideoElement?.();
+                if (video && !video.ended && !playerBufferState.userPauseIntent) {
+                    const isStalled = video.readyState < 3 && (video.paused || video.networkState === 2);
+                    const stallReloadCooldown = 15000;
+                    const cooldownExpired = !playerBufferState.lastAdStallReloadAt || (Date.now() - playerBufferState.lastAdStallReloadAt) > stallReloadCooldown;
+                    if (isStalled && cooldownExpired) {
+                        if (!playerBufferState.adStallStartAt) {
+                            playerBufferState.adStallStartAt = Date.now();
+                        } else if ((Date.now() - playerBufferState.adStallStartAt) > 3000) {
+                            console.log('[AD DEBUG] Loading circle detected during ad break (' + ((Date.now() - playerBufferState.adStallStartAt) / 1000).toFixed(1) + 's stall, readyState=' + video.readyState + ') — early reload');
+                            playerBufferState.lastAdStallReloadAt = Date.now();
+                            playerBufferState.adStallStartAt = 0;
+                            doTwitchPlayerTask(false, true);
+                        }
+                    } else if (!isStalled) {
+                        playerBufferState.adStallStartAt = 0;
+                    }
+                }
+            } catch {}
+        } else if (!isActivelyStrippingAds && playerBufferState.adStallStartAt) {
+            playerBufferState.adStallStartAt = 0;
+        }
         const isLive = playerForMonitoringBuffering?.state?.props?.content?.type === 'live';
         if (playerBufferState.isLive && !isLive) {
             updateAdblockBanner({
