@@ -30,7 +30,9 @@
             'site',//Source
             'popout',//Source
             'mobile_web',//Mobile
-            'autoplay',//360p
+            // 'autoplay' (360p) removed: when committed as cycle backup, the player gets stuck
+            // in an endless loading circle after the CSAI-only path releases the backup —
+            // autoplay variants don't transition cleanly back to main stream variants.
             //'picture-by-picture-CACHED'//360p (-CACHED is an internal suffix and is removed)
         ];
         scope.FallbackPlayerType = 'embed';
@@ -828,6 +830,9 @@
                                         fallbackM3u8 = m3u8Text;
                                     }
                                     if ((!hasAdTags(m3u8Text) && (SimulatedAdsDepth == 0 || playerTypeIndex >= SimulatedAdsDepth - 1)) || (!fallbackM3u8 && playerTypeIndex >= playerTypesToTry.length - 1)) {
+                                        if (hasAdTags(m3u8Text) && !fallbackM3u8 && playerTypeIndex >= playerTypesToTry.length - 1) {
+                                            console.log('[AD DEBUG] All backup player types ad-laden — taking ' + playerType + ' as last-resort fallback (strip+recovery path will engage)');
+                                        }
                                         if ((streamInfo.ConsecutiveAllStrippedPolls || 0) >= 1 && !hasAdTags(m3u8Text)) {
                                             const prevType = streamInfo.LastCommittedBackupPlayerType;
                                             if (prevType && prevType !== playerType) {
