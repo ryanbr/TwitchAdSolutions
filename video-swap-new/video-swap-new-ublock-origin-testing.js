@@ -574,7 +574,26 @@ twitch-videoad.js text/javascript
                 textStr = await onFoundAd(streamInfo, textStr, true, realFetch, url, currentResolution);
             }
         } else if (haveAdTags && !streamInfo.IsMovingOffBackupEncodings) {
-            textStr = await onFoundAd(streamInfo, textStr, true, realFetch, url, currentResolution);
+            // CSAI fast path: if all segments in the main stream are live, skip backup search.
+            // CSAI ads are delivered outside the m3u8 — the main stream segments are clean.
+            // Return the main stream directly, avoiding the backup stream switch that causes
+            // a 20-40s rebuffer gap.
+            const mainStreamLines = textStr.split(/\r?\n/);
+            let hasNonLiveSegment = false;
+            for (let i = 0; i < mainStreamLines.length; i++) {
+                if (mainStreamLines[i].startsWith('#EXTINF') && !mainStreamLines[i].includes(LIVE_SIGNIFIER)) {
+                    hasNonLiveSegment = true;
+                    break;
+                }
+            }
+            if (!hasNonLiveSegment) {
+                if (!streamInfo.HasLoggedCsaiFastPath) {
+                    streamInfo.HasLoggedCsaiFastPath = true;
+                    console.log('[AD DEBUG] CSAI fast path — all segments live, skipping backup search');
+                }
+            } else {
+                textStr = await onFoundAd(streamInfo, textStr, true, realFetch, url, currentResolution);
+            }
         }
         if (IsAdStrippingEnabled) {
             textStr = stripAdSegments(textStr, false, streamInfo);
