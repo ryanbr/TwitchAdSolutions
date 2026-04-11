@@ -431,7 +431,11 @@ twitch-videoad.js text/javascript
                                         }
                                     }
                                 }
-                                streamInfo.LastPlayerReload = Date.now();
+                                // Note: do NOT set streamInfo.LastPlayerReload here. It was previously
+                                // set unconditionally on new stream session creation, which caused the
+                                // first end-of-break reload of every new channel to be blocked by
+                                // cooldown — the cooldown check treated the session-creation timestamp
+                                // as a recent reload, even though no reload had actually occurred.
                                 resolve(new Response(replaceServerTimeInM3u8(streamInfo.IsUsingModifiedM3U8 ? streamInfo.ModifiedM3U8 : streamInfo.EncodingsM3U8, serverTime)));
                             } else {
                                 resolve(response);
@@ -567,6 +571,17 @@ twitch-videoad.js text/javascript
                 streamInfo.NumStrippedAdSegments++;
             } else if (i < lines.length - 1 && line.startsWith('#EXTINF') && isLiveSegment) {
                 liveSegments.push({ extinf: line, url: lines[i + 1] });
+            } else if (line.startsWith('#EXT-X-PART:')) {
+                // LL-HLS part: URI is inline as an attribute. Strip if it matches a known
+                // ad URL (already in cache from a parallel EXTINF strip, or matches a URL pattern).
+                // Without this, the player may use the parts path to fetch ad media via low-latency.
+                const partUriMatch = line.match(/URI="([^"]+)"/);
+                const partUri = partUriMatch ? partUriMatch[1] : '';
+                if (partUri && (AdSegmentCache.has(partUri) || AdSegmentURLPatterns.some((p) => partUri.includes(p)))) {
+                    AdSegmentCache.set(partUri, Date.now());
+                    lines[i] = '';
+                    hasStrippedAdSegments = true;
+                }
             }
             if (AdSignifiers.some((s) => line.includes(s))) {
                 hasStrippedAdSegments = true;
@@ -691,6 +706,7 @@ twitch-videoad.js text/javascript
                 streamInfo.SawCSAIFastPath = false;
                 streamInfo.LastCommittedBackupPlayerType = null;
                 streamInfo.FreezeStartedAt = 0;
+                streamInfo.CycleRescuedThisBreak = false;
                 console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', pod: ' + podLength + ' ad(s) (~' + (podLength * 30) + 's expected), signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
                 if (!DisableAdSpoofing) {
                     notifyAdComplete(textStr);
@@ -835,6 +851,11 @@ twitch-videoad.js text/javascript
                                             const prevType = streamInfo.LastCommittedBackupPlayerType;
                                             if (prevType && prevType !== playerType) {
                                                 console.log('[AD DEBUG] Cycle switched to different clean type (' + playerType + ', was ' + prevType + ') during freeze — recovered without reload');
+                                                // Only mark as cycle-rescued when we ACTUALLY switched player types.
+                                                // Natural recovery (same type became clean) still needs the end-of-break
+                                                // reload to refresh the player buffer — skipping it leaves the player
+                                                // stuck with low buffer and the buffer monitor unable to recover.
+                                                streamInfo.CycleRescuedThisBreak = true;
                                             } else {
                                                 console.log('[AD DEBUG] Same backup type (' + playerType + ') became clean during freeze — natural recovery');
                                             }
@@ -990,8 +1011,19 @@ twitch-videoad.js text/javascript
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
                     streamInfo.IsUsingModifiedM3U8 = false;
                 } else {
+                // Skip end-of-break reload when cycle rescue handled the break cleanly:
+                // a freeze of ≤2 polls (~4s) was resolved by switching to a clean backup,
+                // and no early reload was needed. The player is on a healthy backup stream
+                // — reloading just to return to the canonical player type causes an unnecessary
+                // ~1-2s loading circle.
+                const cycleRescuedCleanly = streamInfo.CycleRescuedThisBreak &&
+                    (streamInfo.TotalAllStrippedPolls || 0) <= 2 &&
+                    (streamInfo.EarlyReloadCount || 0) === 0;
+                if (cycleRescuedCleanly) {
+                    console.log('[AD DEBUG] Cycle rescue handled the break cleanly — skipping end-of-break reload');
+                }
                 // Reload if backup was used AND segments were stripped (need clean state). Otherwise, respect ReloadPlayerAfterAd + cooldown.
-                const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && hadStrippedSegments && !tooSoonSinceLastReload);
+                const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && hadStrippedSegments && !tooSoonSinceLastReload && !cycleRescuedCleanly);
                 console.log('[AD DEBUG] Reload decision: shouldReload=' + shouldReload + ' IsUsingModifiedM3U8=' + streamInfo.IsUsingModifiedM3U8 + ' hadStripped=' + hadStrippedSegments + ' tooSoon=' + tooSoonSinceLastReload + ' cooldown=' + effectiveCooldown + 's');
                 if (shouldReload) {
                     streamInfo.ReloadTimestamps.push(Date.now());// Only track actual reloads, not skipped ones
