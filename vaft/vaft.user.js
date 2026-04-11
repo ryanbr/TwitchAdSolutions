@@ -562,7 +562,7 @@
         if (hasStrippedAdSegments) {
             for (let i = 0; i < lines.length; i++) {
                 // No low latency during ads (otherwise it's possible for the player to prefetch and display ad segments)
-                if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:')) {
+                if (lines[i].startsWith('#EXT-X-TWITCH-PREFETCH:') || lines[i].startsWith('#EXT-X-PRELOAD-HINT:')) {
                     lines[i] = '';
                 }
             }
