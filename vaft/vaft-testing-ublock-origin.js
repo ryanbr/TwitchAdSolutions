@@ -849,9 +849,6 @@ twitch-videoad.js text/javascript
                                         fallbackM3u8 = m3u8Text;
                                     }
                                     if ((!hasAdTags(m3u8Text) && (SimulatedAdsDepth == 0 || playerTypeIndex >= SimulatedAdsDepth - 1)) || (!fallbackM3u8 && playerTypeIndex >= playerTypesToTry.length - 1)) {
-                                        if (hasAdTags(m3u8Text) && !fallbackM3u8 && playerTypeIndex >= playerTypesToTry.length - 1) {
-                                            console.log('[AD DEBUG] All backup player types ad-laden — taking ' + playerType + ' as last-resort fallback (strip+recovery path will engage)');
-                                        }
                                         if ((streamInfo.ConsecutiveAllStrippedPolls || 0) >= 2 && !hasAdTags(m3u8Text)) {
                                             const prevType = streamInfo.LastCommittedBackupPlayerType;
                                             if (prevType && prevType !== playerType) {
@@ -883,6 +880,9 @@ twitch-videoad.js text/javascript
                                     // Take ad-laden backup as last resort: minimal-requests window,
                                     // 3+ ad breaks with 0 strips (false positive), or final type tried.
                                     if (isDoingMinimalRequests || streamInfo.ConsecutiveZeroStripBreaks >= 3 || playerTypeIndex >= playerTypesToTry.length - 1) {
+                                        if (playerTypeIndex >= playerTypesToTry.length - 1 && !isDoingMinimalRequests && streamInfo.ConsecutiveZeroStripBreaks < 3) {
+                                            console.log('[AD DEBUG] All backup player types ad-laden — taking ' + playerType + ' as last-resort fallback (strip+recovery path will engage)');
+                                        }
                                         backupPlayerType = playerType;
                                         backupM3u8 = m3u8Text;
                                         break;
