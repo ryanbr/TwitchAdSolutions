@@ -41,7 +41,7 @@
         scope.ReloadCooldownSeconds = 30;// Minimum seconds between reloads — breaks CSAI cascades triggered by reload
         scope.DisableReloadCap = false;// If true, buffer monitor reloads unlimited times (pre-v47 behavior, risk of cascade)
         scope.DriftCorrectionRate = 1.1;// Playback rate for catching up to live edge after reload (0 = disable drift correction)
-        scope.EarlyReloadPollThreshold = 3;// Number of consecutive all-stripped polls before triggering early reload (each poll ~2s, so 3 = ~6s, 5 = ~10s, 10 = ~20s; 0 = disable)
+        scope.EarlyReloadPollThreshold = 5;// Number of consecutive all-stripped polls before triggering early reload (each poll ~2s, so 5 = ~10s, 3 = ~6s, 10 = ~20s; 0 = disable)
         scope.PinBackupPlayerType = true;// Remember which backup player type worked and try it first on next ad break
         scope.PlayerReloadMinimalRequestsTime = 1500;
         scope.PlayerReloadMinimalRequestsPlayerIndex = 2;//autoplay
@@ -251,22 +251,6 @@
                             }
                         } else if (e.data.key == 'TriggeredPlayerReload') {
                             HasTriggeredPlayerReload = true;
-                        } else if (e.data.key == 'ReloadSkipped') {
-                            // Main thread refused the reload (player healthy) — clear the
-                            // early-reload flags so we can re-fire if the player later stalls
-                            let cleared = false;
-                            for (const channel in StreamInfos) {
-                                const si = StreamInfos[channel];
-                                if (si && si.EarlyReloadTriggered) {
-                                    si.EarlyReloadTriggered = false;
-                                    si.EarlyReloadAwaitingResult = false;
-                                    si.EarlyReloadCount = Math.max(0, (si.EarlyReloadCount || 0) - 1);
-                                    cleared = true;
-                                }
-                            }
-                            if (cleared) {
-                                console.log('[AD DEBUG] Reload skipped by main thread (player healthy) — early reload state cleared, can retry');
-                            }
                         } else if (e.data.key == 'SimulateAds') {
                             SimulatedAdsDepth = e.data.value;
                             console.log('SimulatedAdsDepth: ' + SimulatedAdsDepth);
@@ -921,20 +905,12 @@
             // for N+ polls (~Nx2s), trigger a reload to attempt fresh content. Bounded to one
             // reload per ad in the pod (e.g. 2-ad pod = up to 2 early reloads).
             const maxEarlyReloads = Math.max(1, streamInfo.PodLength || 1);
-            // Thin recovery cache fast path: when fewer than 3 live segments are cached
-            // for fallback, the player will burn through them in seconds. Trigger early
-            // reload immediately on the first all-stripped poll instead of waiting for
-            // the normal threshold — the ~1-2s reload disruption is much shorter than
-            // the strip+buffer-rebuild stall that would otherwise occur (~10-15s).
-            const recoveryThin = (streamInfo.RecoverySegments?.length || 0) < 3;
-            const effectiveThreshold = recoveryThin ? 1 : EarlyReloadPollThreshold;
-            if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= effectiveThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < maxEarlyReloads) {
+            if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= EarlyReloadPollThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < maxEarlyReloads) {
                 streamInfo.EarlyReloadTriggered = true;
                 streamInfo.EarlyReloadAwaitingResult = true;
                 streamInfo.EarlyReloadCount = (streamInfo.EarlyReloadCount || 0) + 1;
                 streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
-                const reason = recoveryThin ? ' (thin recovery cache: ' + (streamInfo.RecoverySegments?.length || 0) + ' segments)' : '';
-                console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls' + reason + ' [' + streamInfo.EarlyReloadCount + '/' + maxEarlyReloads + ']');
+                console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls (~' + (streamInfo.ConsecutiveAllStrippedPolls * 2) + 's freeze) [' + streamInfo.EarlyReloadCount + '/' + maxEarlyReloads + ']');
                 postMessage({ key: 'ReloadPlayer' });
             }
         } else if (streamInfo.IsShowingAd) {
@@ -1455,7 +1431,6 @@
             const video = player.getHTMLVideoElement?.();
             if (video && video.readyState >= 3 && !video.paused && !video.ended) {
                 console.log('[AD DEBUG] Skipping reload — player healthy (readyState=' + video.readyState + ', playing)');
-                postTwitchWorkerMessage('ReloadSkipped');
                 return;
             }
         }
