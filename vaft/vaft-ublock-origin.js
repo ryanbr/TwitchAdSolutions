@@ -1282,10 +1282,17 @@ twitch-videoad.js text/javascript
                 const player = playerForMonitoringBuffering.player;
                 const video = player?.getHTMLVideoElement?.();
                 if (video && !video.ended && !playerBufferState.userPauseIntent) {
+                    // Track whether the player has ever had data — distinguishes a real stall
+                    // (had data, lost data) from initial player init (never had data yet).
+                    // Without this, fresh page load + preroll causes PR #96 to misfire repeatedly
+                    // because readyState=0 is normal during init.
+                    if (video.readyState >= 3) {
+                        playerBufferState.hasHadData = true;
+                    }
                     const isStalled = video.readyState < 3 && (video.paused || video.networkState === 2);
                     const stallReloadCooldown = 15000;
                     const cooldownExpired = !playerBufferState.lastAdStallReloadAt || (Date.now() - playerBufferState.lastAdStallReloadAt) > stallReloadCooldown;
-                    if (isStalled && cooldownExpired) {
+                    if (isStalled && cooldownExpired && playerBufferState.hasHadData) {
                         if (!playerBufferState.adStallStartAt) {
                             playerBufferState.adStallStartAt = Date.now();
                         } else if ((Date.now() - playerBufferState.adStallStartAt) > 3000) {
