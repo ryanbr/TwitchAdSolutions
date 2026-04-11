@@ -19,7 +19,10 @@ twitch-videoad.js text/javascript
     if (_isNested) {
         const _host = document.location.hostname;
         const _isEmbedContext = _host === 'player.twitch.tv' || _host === 'embed.twitch.tv' || document.location.pathname.startsWith('/embed/');
-        if (!_isEmbedContext) { return; }
+        if (!_isEmbedContext) {
+            console.log('[AD DEBUG] vaft-testing skipped — nested frame on ' + _host + document.location.pathname + ' (not a Twitch embed). If you see this on twitch.tv/CHANNEL top frame, please report.');
+            return;
+        }
     }
     'use strict';
     const ourTwitchAdSolutionsVersion = 603;// Used to prevent conflicts with outdated versions of the scripts
