@@ -222,6 +222,17 @@ twitch-videoad.js text/javascript
                             }
                         } else if (e.data.key == 'TriggeredPlayerReload') {
                             HasTriggeredPlayerReload = true;
+                        } else if (e.data.key == 'ReloadSkipped') {
+                            // Main thread refused the reload (player healthy) — clear the
+                            // early-reload flags so we can re-fire if the player later stalls
+                            for (const channel in StreamInfos) {
+                                const si = StreamInfos[channel];
+                                if (si && si.EarlyReloadTriggered) {
+                                    si.EarlyReloadTriggered = false;
+                                    si.EarlyReloadAwaitingResult = false;
+                                    si.EarlyReloadCount = Math.max(0, (si.EarlyReloadCount || 0) - 1);
+                                }
+                            }
                         } else if (e.data.key == 'SimulateAds') {
                             SimulatedAdsDepth = e.data.value;
                             console.log('SimulatedAdsDepth: ' + SimulatedAdsDepth);
@@ -1401,6 +1412,7 @@ twitch-videoad.js text/javascript
             const video = player.getHTMLVideoElement?.();
             if (video && video.readyState >= 3 && !video.paused && !video.ended) {
                 console.log('[AD DEBUG] Skipping reload — player healthy (readyState=' + video.readyState + ', playing)');
+                postTwitchWorkerMessage('ReloadSkipped');
                 return;
             }
         }
