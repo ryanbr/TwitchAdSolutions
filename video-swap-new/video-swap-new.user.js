@@ -315,6 +315,12 @@
     async function onFoundAd(streamInfo, textStr, reloadPlayer, realFetch, url, resolutionInfo) {
         let result = textStr;
         streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
+        // Track high-confidence ad markers to distinguish real ads from false-positive signifier matches.
+        // These attributes are present on every real Twitch ad and absent from anything that could
+        // false-positive (e.g. metadata containing the word 'stitched').
+        if (!streamInfo.HasConfirmedAdAttrs) {
+            streamInfo.HasConfirmedAdAttrs = textStr.includes('X-TV-TWITCH-AD-AD-SESSION-ID') || textStr.includes('X-TV-TWITCH-AD-RADS-TOKEN');
+        }
         const playerTypes = [...OPT_BACKUP_PLAYER_TYPES];
         // Try pinned backup player type first if available
         if (PinBackupPlayerType && streamInfo.PinnedBackupPlayerType) {
@@ -555,14 +561,19 @@
                                 console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
                             }
                             console.log('No more ads on main stream. Stripped ' + streamInfo.NumStrippedAdSegments + ' ad segments. ' + (ReloadPlayerAfterAd ? 'Triggering player reload to go back to main stream...' : 'Resuming playback...'));
-                            if (streamInfo.NumStrippedAdSegments === 0) {
+                            // Only count toward false-positive guard if the m3u8 lacked high-confidence ad markers.
+                            // Confirmed ads (with X-TV-TWITCH-AD-AD-SESSION-ID etc.) that produce 0 strips are real
+                            // ads we successfully avoided via clean backup — not false positives.
+                            if (streamInfo.NumStrippedAdSegments === 0 && !streamInfo.HasConfirmedAdAttrs) {
                                 streamInfo.ConsecutiveZeroStripBreaks++;
                                 if (streamInfo.ConsecutiveZeroStripBreaks >= 3) {
-                                    console.log('[AD DEBUG] Warning: ' + streamInfo.ConsecutiveZeroStripBreaks + ' consecutive ad breaks with 0 segments stripped — possible false positive from ad signifiers');
+                                    console.log('[AD DEBUG] Warning: ' + streamInfo.ConsecutiveZeroStripBreaks + ' consecutive unconfirmed ad breaks with 0 segments stripped — possible false positive from ad signifiers');
                                 }
-                            } else {
+                            } else if (streamInfo.NumStrippedAdSegments > 0) {
                                 streamInfo.ConsecutiveZeroStripBreaks = 0;
                             }
+                            streamInfo.HasConfirmedAdAttrs = false;
+                            streamInfo.HasLoggedCsaiFastPath = false;
                             streamInfo.IsMovingOffBackupEncodings = true;
                             streamInfo.BackupEncodings = null;
                             streamInfo.BackupEncodingsStatus.clear();
@@ -594,7 +605,26 @@
                 textStr = await onFoundAd(streamInfo, textStr, true, realFetch, url, currentResolution);
             }
         } else if (haveAdTags && !streamInfo.IsMovingOffBackupEncodings) {
-            textStr = await onFoundAd(streamInfo, textStr, true, realFetch, url, currentResolution);
+            // CSAI fast path: if all segments in the main stream are live, skip backup search.
+            // CSAI ads are delivered outside the m3u8 — the main stream segments are clean.
+            // Return the main stream directly, avoiding the backup stream switch that causes
+            // a 20-40s rebuffer gap.
+            const mainStreamLines = textStr.split(/\r?\n/);
+            let hasNonLiveSegment = false;
+            for (let i = 0; i < mainStreamLines.length; i++) {
+                if (mainStreamLines[i].startsWith('#EXTINF') && !mainStreamLines[i].includes(LIVE_SIGNIFIER)) {
+                    hasNonLiveSegment = true;
+                    break;
+                }
+            }
+            if (!hasNonLiveSegment) {
+                if (!streamInfo.HasLoggedCsaiFastPath) {
+                    streamInfo.HasLoggedCsaiFastPath = true;
+                    console.log('[AD DEBUG] CSAI fast path — all segments live, skipping backup search');
+                }
+            } else {
+                textStr = await onFoundAd(streamInfo, textStr, true, realFetch, url, currentResolution);
+            }
         }
         if (IsAdStrippingEnabled) {
             textStr = stripAdSegments(textStr, false, streamInfo);
