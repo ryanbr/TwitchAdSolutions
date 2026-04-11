@@ -805,6 +805,9 @@
                                         fallbackM3u8 = m3u8Text;
                                     }
                                     if ((!hasAdTags(m3u8Text) && (SimulatedAdsDepth == 0 || playerTypeIndex >= SimulatedAdsDepth - 1)) || (!fallbackM3u8 && playerTypeIndex >= playerTypesToTry.length - 1)) {
+                                        if ((streamInfo.ConsecutiveAllStrippedPolls || 0) >= 1 && !hasAdTags(m3u8Text)) {
+                                            console.log('[AD DEBUG] Found clean backup (' + playerType + ') during freeze — recovered without reload');
+                                        }
                                         backupPlayerType = playerType;
                                         backupM3u8 = m3u8Text;
                                         break;
@@ -816,9 +819,18 @@
                                             console.log('[AD DEBUG] Backup stream (' + playerType + ') also has ads');
                                         }
                                     }
-                                    // If backup also has ads, take it immediately — trying other
-                                    // player types won't help (Twitch serves ads across all types)
-                                    if (hasAdTags(m3u8Text) || isFullyCachedPlayerType || isDoingMinimalRequests) {
+                                    if (isFullyCachedPlayerType || isDoingMinimalRequests) {
+                                        backupPlayerType = playerType;
+                                        backupM3u8 = m3u8Text;
+                                        break;
+                                    }
+                                    // Hybrid: take first ad-laden backup unless we're already in
+                                    // a recovery freeze (ConsecutiveAllStrippedPolls >= 1). During
+                                    // a freeze, keep cycling other player types in case one is clean —
+                                    // a successful switch avoids the early-reload disruption entirely.
+                                    // Final type is taken as last resort either way.
+                                    const inFreeze = (streamInfo.ConsecutiveAllStrippedPolls || 0) >= 1;
+                                    if (hasAdTags(m3u8Text) && (!inFreeze || playerTypeIndex >= playerTypesToTry.length - 1)) {
                                         backupPlayerType = playerType;
                                         backupM3u8 = m3u8Text;
                                         break;
