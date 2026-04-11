@@ -12,6 +12,13 @@
 // @grant        none
 // ==/UserScript==
 (function() {
+    // Skip injection in nested frames that aren't embed pages — Twitch's main channel page
+    // has 5+ hidden cross-origin iframes (auth, analytics, ad SDK, etc.) and userscript
+    // managers / uBO inject into all matching ones. Each becomes a racing vaft instance
+    // that fights for player control. Only the top frame hosts the player on twitch.tv/CHANNEL;
+    // nested frames are noise. The /embed/ exception preserves Twitch streams embedded on
+    // third-party sites (where vaft runs in an iframe whose parent is on a different origin).
+    if (window !== window.top && !document.location.pathname.startsWith('/embed/')) { return; }
     'use strict';
     const ourTwitchAdSolutionsVersion = 45;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
