@@ -30,7 +30,9 @@
             'site',//Source
             'popout',//Source
             'mobile_web',//Mobile
-            'autoplay',//360p
+            // 'autoplay' (360p) removed: when committed as cycle backup, the player gets stuck
+            // in an endless loading circle after the CSAI-only path releases the backup —
+            // autoplay variants don't transition cleanly back to main stream variants.
             //'picture-by-picture-CACHED'//360p (-CACHED is an internal suffix and is removed)
         ];
         scope.FallbackPlayerType = 'embed';
