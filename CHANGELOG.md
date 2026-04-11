@@ -1,5 +1,21 @@
 ## Unreleased
 
+## v58.0.1
+
+### Bug Fixes
+- **Skip injection in nested frames** — Twitch's main channel page has 5+ hidden cross-origin iframes (auth, analytics, ad SDK, etc.) that uBO/Tampermonkey were injecting the script into, causing 4+ racing instances per page that fought for player control. Use `window.frameElement` (the canonical "am I in a nested iframe" check) to skip injection in nested frames, with an allow-list for the three documented Twitch embed contexts (`player.twitch.tv`, `embed.twitch.tv`, `/embed/...`) so third-party Twitch embeds still work (vaft + video-swap-new) (#109, #113)
+- **Tampermonkey compatibility** — initial nested-frame check used `window !== window.top` which returned `true` even on the top frame in Tampermonkey (window proxy quirk), causing vaft to never load on Tampermonkey installs. Fixed by switching to `window.frameElement === null` (vaft + video-swap-new) (#113, fixes #112)
+- **PR #96 misfiring on initial player init** — the loading-circle health check was firing repeatedly on fresh page load because `readyState=0` is normal during player initialization (not a real stall). Track a `hasHadData` flag that flips true once the player has had data at least once; PR #96 only fires after that. Eliminates the cascade of 4+ reloads observed during fresh-load prerolls (vaft) (#111)
+- **Skip `'autoplay'` from `BackupPlayerTypes`** — when the cycle committed `autoplay` as a clean backup (after all other types were ad-laden), the player got stuck in an endless loading circle because autoplay's variant ladder is incompatible with main stream variants. Removed from the cycle list; falls through to the bounded ~10s freeze + early reload path instead (vaft) (#107)
+- **All-backups-ad-laden log placement** — the diagnostic log was in a code block that required `fallbackM3u8` to be null, which never happened in practice. Moved to the actual last-resort commit site so it actually fires when all backup player types are ad-laden (vaft) (#108)
+- **Tighten cycle-rescue end-of-break reload skip** — PR #98 was incorrectly skipping end-of-break reloads on natural recovery (same player type became clean) cases, leaving the player with low buffer and no recovery. Restricted the skip to only fire on real cycle switches (different player type) (vaft) (#101)
+- **Strip ad-laden `#EXT-X-PART:` lines** — LL-HLS parts that contained known ad URLs were leaking through. Now stripped alongside `#EXTINF` segments (vaft + video-swap-new) (#105)
+- **Strip `#EXT-X-PRELOAD-HINT`** during ad blocking — forward-compatibility for when Twitch transitions from `#EXT-X-TWITCH-PREFETCH` to the standard LL-HLS tag (vaft + video-swap-new) (#104)
+- **video-swap-new ports** — CSAI fast path and `HasConfirmedAdAttrs` false-positive guard ported from vaft (#103)
+
+### Diagnostic Logging
+- Log when frame check skips injection: `[AD DEBUG] vaft skipped — nested frame on <host><path>` — helps diagnose "no vaft logs" reports (vaft + video-swap-new)
+
 ## v58.0.0
 
 ### New Features
