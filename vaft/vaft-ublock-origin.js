@@ -455,7 +455,11 @@ twitch-videoad.js text/javascript
                                     }
                                 }
                                 streamInfo.LastSeenAt = Date.now();
-                                streamInfo.LastPlayerReload = Date.now();
+                                // Note: do NOT set streamInfo.LastPlayerReload here. It was previously
+                                // set unconditionally on new stream session creation, which caused the
+                                // first end-of-break reload of every new channel to be blocked by
+                                // cooldown — the cooldown check treated the session-creation timestamp
+                                // as a recent reload, even though no reload had actually occurred.
                                 resolve(new Response(replaceServerTimeInM3u8(streamInfo.IsUsingModifiedM3U8 ? streamInfo.ModifiedM3U8 : streamInfo.EncodingsM3U8, serverTime)));
                             } else {
                                 resolve(response);
