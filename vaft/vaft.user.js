@@ -377,6 +377,10 @@
                                     streamInfo = null;
                                 }
                                 if (streamInfo == null || streamInfo.EncodingsM3U8 == null) {
+                                    // Clear reload-pending flag from a prior stream session — without this,
+                                    // a reload triggered on the previous channel bleeds into the new channel's
+                                    // cooldown calculation, blocking legitimate end-of-break reloads.
+                                    HasTriggeredPlayerReload = false;
                                     console.log('[AD DEBUG] New stream session — channel: ' + channelName + ', API: ' + (V2API ? 'v2' : 'v1'));
                                     StreamInfos[channelName] = streamInfo = {
                                         ChannelName: channelName,
@@ -1182,8 +1186,14 @@
                                 playerBufferState.fixAttempts++;
                                 // Cap: at most ONE reload per recovery window. After reloading once,
                                 // stay on pause/play until playback recovers. Prevents reload cascades.
-                                const wouldEscalate = playerBufferState.fixAttempts >= 3;
-                                const escalateToReload = wouldEscalate && (DisableReloadCap || !playerBufferState.recoveryReloadUsed);
+                                // Exception: when buffer is dangerously low (< 0.5s), pause/play won't help —
+                                // only fresh data will. Force escalate to reload regardless of recoveryReloadUsed.
+                                const bufferCritical = bufferDuration < 0.5;
+                                const wouldEscalate = playerBufferState.fixAttempts >= 3 || bufferCritical;
+                                const escalateToReload = wouldEscalate && (DisableReloadCap || !playerBufferState.recoveryReloadUsed || bufferCritical);
+                                if (bufferCritical && playerBufferState.recoveryReloadUsed) {
+                                    console.log('[AD DEBUG] Buffer critical (' + bufferDuration.toFixed(2) + 's) — bypassing reload cap');
+                                }
                                 const reloadCapNote = wouldEscalate && !escalateToReload ? ' (reload cap reached, pause/play only — set twitchAdSolutions_disableReloadCap=true to bypass)' : (escalateToReload ? ' (escalating to reload)' : '');
                                 console.log('Attempt to fix buffering position:' + playerBufferState.position + ' bufferedPosition:' + playerBufferState.bufferedPosition + ' bufferDuration:' + playerBufferState.bufferDuration + reloadCapNote);
                                 // Seek past buffer gap instead of stalling + drift to recover
