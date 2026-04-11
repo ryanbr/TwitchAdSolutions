@@ -673,6 +673,7 @@
                 streamInfo.EarlyReloadAtPoll = 0;
                 // Track high-confidence ad markers to distinguish real ads from false-positive signifier matches
                 streamInfo.HasConfirmedAdAttrs = textStr.includes('X-TV-TWITCH-AD-AD-SESSION-ID') || textStr.includes('X-TV-TWITCH-AD-RADS-TOKEN');
+                streamInfo.CycleRescuedThisBreak = false;
                 console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', pod: ' + podLength + ' ad(s) (~' + (podLength * 30) + 's expected), signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
                 postMessage({
                     key: 'UpdateAdBlockBanner',
@@ -811,6 +812,7 @@
                                     if ((!hasAdTags(m3u8Text) && (SimulatedAdsDepth == 0 || playerTypeIndex >= SimulatedAdsDepth - 1)) || (!fallbackM3u8 && playerTypeIndex >= playerTypesToTry.length - 1)) {
                                         if ((streamInfo.ConsecutiveAllStrippedPolls || 0) >= 1 && !hasAdTags(m3u8Text)) {
                                             console.log('[AD DEBUG] Found clean backup (' + playerType + ') during freeze — recovered without reload');
+                                            streamInfo.CycleRescuedThisBreak = true;
                                         }
                                         backupPlayerType = playerType;
                                         backupM3u8 = m3u8Text;
@@ -954,7 +956,18 @@
                 const recentReloads = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000).length;
                 const effectiveCooldown = recentReloads >= 3 ? ReloadCooldownSeconds * 3 : ReloadCooldownSeconds;
                 const tooSoonSinceLastReload = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < (effectiveCooldown * 1000);
-                const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && hadStrippedSegments && !tooSoonSinceLastReload);
+                // Skip end-of-break reload when cycle rescue handled the break cleanly:
+                // a freeze of ≤2 polls (~4s) was resolved by switching to a clean backup,
+                // and no early reload was needed. The player is on a healthy backup stream
+                // — reloading just to return to the canonical player type causes an unnecessary
+                // ~1-2s loading circle.
+                const cycleRescuedCleanly = streamInfo.CycleRescuedThisBreak &&
+                    (streamInfo.TotalAllStrippedPolls || 0) <= 2 &&
+                    (streamInfo.EarlyReloadCount || 0) === 0;
+                if (cycleRescuedCleanly) {
+                    console.log('[AD DEBUG] Cycle rescue handled the break cleanly — skipping end-of-break reload');
+                }
+                const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && hadStrippedSegments && !tooSoonSinceLastReload && !cycleRescuedCleanly);
                 if (shouldReload) {
                     streamInfo.ReloadTimestamps.push(Date.now());
                     streamInfo.IsUsingModifiedM3U8 = false;
