@@ -10,7 +10,13 @@ twitch-videoad.js text/javascript
     // (https://dev.twitch.tv/docs/embed/video-and-clips/) — preserves Twitch streams
     // embedded on third-party sites where vaft runs in an iframe whose parent is on
     // a different origin.
-    if (window !== window.top) {
+    // Use window.frameElement to detect nested frames — null on top frame, the iframe
+    // element on a same-origin nested frame, throws on a cross-origin nested frame.
+    // More reliable than 'window !== window.top' because Tampermonkey wraps window in a
+    // proxy where the strict comparison can return true even on the top frame.
+    let _isNested = false;
+    try { _isNested = window.frameElement !== null; } catch (_e) { _isNested = true; }
+    if (_isNested) {
         const _host = document.location.hostname;
         const _isEmbedContext = _host === 'player.twitch.tv' || _host === 'embed.twitch.tv' || document.location.pathname.startsWith('/embed/');
         if (!_isEmbedContext) { return; }
