@@ -1,13 +1,20 @@
 twitch-videoad.js text/javascript
 (function() {
     if ( /(^|\.)twitch\.tv$/.test(document.location.hostname) === false ) { return; }
-    // Skip injection in nested frames that aren't embed pages — Twitch's main channel page
-    // has 5+ hidden cross-origin iframes (auth, analytics, ad SDK, etc.) and uBO injects
-    // into all matching ones. Each becomes a racing instance that fights for player control.
-    // Only the top frame hosts the player on twitch.tv/CHANNEL; nested frames are noise.
-    // The /embed/ exception preserves Twitch streams embedded on third-party sites (where
-    // the script runs in an iframe whose parent is on a different origin).
-    if (window !== window.top && !document.location.pathname.startsWith('/embed/')) { return; }
+    // Skip injection in nested frames that aren't legitimate Twitch embed contexts.
+    // Twitch's main channel page has 5+ hidden cross-origin iframes (auth, analytics,
+    // ad SDK, etc.) and uBO injects into all matching ones. Each becomes a racing instance
+    // that fights for player control. Only the top frame hosts the player on twitch.tv/CHANNEL;
+    // nested auxiliary frames are noise.
+    // Allow-list for nested-frame injection: Twitch's three documented embed contexts
+    // (https://dev.twitch.tv/docs/embed/video-and-clips/) — preserves Twitch streams
+    // embedded on third-party sites where the script runs in an iframe whose parent
+    // is on a different origin.
+    if (window !== window.top) {
+        const _host = document.location.hostname;
+        const _isEmbedContext = _host === 'player.twitch.tv' || _host === 'embed.twitch.tv' || document.location.pathname.startsWith('/embed/');
+        if (!_isEmbedContext) { return; }
+    }
     const ourTwitchAdSolutionsVersion = 39;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
