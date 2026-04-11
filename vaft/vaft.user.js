@@ -817,10 +817,14 @@
                                             const prevType = streamInfo.LastCommittedBackupPlayerType;
                                             if (prevType && prevType !== playerType) {
                                                 console.log('[AD DEBUG] Cycle switched to different clean type (' + playerType + ', was ' + prevType + ') during freeze — recovered without reload');
+                                                // Only mark as cycle-rescued when we ACTUALLY switched player types.
+                                                // Natural recovery (same type became clean) still needs the end-of-break
+                                                // reload to refresh the player buffer — skipping it leaves the player
+                                                // stuck with low buffer and the buffer monitor unable to recover.
+                                                streamInfo.CycleRescuedThisBreak = true;
                                             } else {
                                                 console.log('[AD DEBUG] Same backup type (' + playerType + ') became clean during freeze — natural recovery');
                                             }
-                                            streamInfo.CycleRescuedThisBreak = true;
                                         }
                                         backupPlayerType = playerType;
                                         backupM3u8 = m3u8Text;
