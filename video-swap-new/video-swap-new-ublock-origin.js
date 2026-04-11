@@ -19,7 +19,10 @@ twitch-videoad.js text/javascript
     if (_isNested) {
         const _host = document.location.hostname;
         const _isEmbedContext = _host === 'player.twitch.tv' || _host === 'embed.twitch.tv' || document.location.pathname.startsWith('/embed/');
-        if (!_isEmbedContext) { return; }
+        if (!_isEmbedContext) {
+            console.log('[AD DEBUG] video-swap-new skipped — nested frame on ' + _host + document.location.pathname + ' (not a Twitch embed). If you see this on twitch.tv/CHANNEL top frame, please report.');
+            return;
+        }
     }
     const ourTwitchAdSolutionsVersion = 39;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new v' + ourTwitchAdSolutionsVersion + ' loading');
