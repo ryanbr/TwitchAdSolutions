@@ -471,6 +471,17 @@
                 streamInfo.NumStrippedAdSegments++;
             } else if (i < lines.length - 1 && line.startsWith('#EXTINF') && line.includes(',live')) {
                 liveSegments.push({ extinf: line, url: lines[i + 1] });
+            } else if (line.startsWith('#EXT-X-PART:')) {
+                // LL-HLS part: URI is inline as an attribute. Strip if it matches a known
+                // ad URL (already in cache from a parallel EXTINF strip, or matches a URL pattern).
+                // Without this, the player may use the parts path to fetch ad media via low-latency.
+                const partUriMatch = line.match(/URI="([^"]+)"/);
+                const partUri = partUriMatch ? partUriMatch[1] : '';
+                if (partUri && (AdSegmentCache.has(partUri) || AD_SEGMENT_URL_PATTERNS.some((p) => partUri.includes(p)))) {
+                    AdSegmentCache.set(partUri, Date.now());
+                    lines[i] = '';
+                    hasStrippedAdSegments = true;
+                }
             }
             if (AD_SIGNIFIERS.some((s) => line.includes(s))) {
                 hasStrippedAdSegments = true;
