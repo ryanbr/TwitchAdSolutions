@@ -1364,6 +1364,31 @@
         const nextDelay = shouldThrottle ? PlayerBufferingDelay * 3 : PlayerBufferingDelay;
         setTimeout(monitorPlayerBuffering, nextDelay);
     }
+    // Hide Twitch's ad break / Turbo promo / stream display ad overlays when we're already blocking ads
+    function hideTwitchAdOverlays() {
+        if (!cachedPlayerRootDiv || !cachedPlayerRootDiv.isConnected) return;
+        // Hide "allow ads" and Turbo promo overlays (walk up to their background container)
+        const promoLinks = cachedPlayerRootDiv.querySelectorAll(
+            'a[href*="/how-to-allow-ads-browser"], a[href="https://www.twitch.tv/turbo"]'
+        );
+        for (let i = 0; i < promoLinks.length; i++) {
+            const overlay = promoLinks[i].closest('.player-overlay-background');
+            if (overlay && !overlay.dataset.tasHidden) {
+                overlay.dataset.tasHidden = '';
+                overlay.style.setProperty('display', 'none', 'important');
+                console.log('[AD DEBUG] Hidden Twitch ad/Turbo promo overlay');
+            }
+        }
+        // Hide stream display ad (SDA) wrapper
+        const sdaElements = document.querySelectorAll('[data-test-selector="sda-wrapper"]');
+        for (let i = 0; i < sdaElements.length; i++) {
+            if (!sdaElements[i].dataset.tasHidden) {
+                sdaElements[i].dataset.tasHidden = '';
+                sdaElements[i].style.setProperty('display', 'none', 'important');
+                console.log('[AD DEBUG] Hidden Twitch stream display ad');
+            }
+        }
+    }
     function updateAdblockBanner(data) {
         if (!cachedPlayerRootDiv || !cachedPlayerRootDiv.isConnected) {
             cachedPlayerRootDiv = document.querySelector('.video-player');
@@ -1384,6 +1409,9 @@
                 isActivelyStrippingAds = data.isStrippingAdSegments;
                 adBlockDiv.P.textContent = 'Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '') + (data.activeBackupPlayerType ? ' (' + data.activeBackupPlayerType + ')' : '');// + (data.numStrippedAdSegments > 0 ? ` (${data.numStrippedAdSegments})` : '');
                 adBlockDiv.style.display = data.hasAds && playerBufferState.isLive ? 'block' : 'none';
+            }
+            if (data.hasAds) {
+                hideTwitchAdOverlays();
             }
         }
     }
