@@ -1112,9 +1112,10 @@
         const nextDelay = shouldThrottle ? PlayerBufferingDelay * 3 : PlayerBufferingDelay;
         setTimeout(monitorPlayerBuffering, nextDelay);
     }
-    // Hide Twitch's ad break / Turbo promo overlay when we're already blocking ads
+    // Hide Twitch's ad break / Turbo promo / stream display ad overlays when we're already blocking ads
     function hideTwitchAdOverlays() {
         if (!cachedPlayerRootDiv || !cachedPlayerRootDiv.isConnected) return;
+        // Hide "allow ads" and Turbo promo overlays (walk up to their background container)
         const promoLinks = cachedPlayerRootDiv.querySelectorAll(
             'a[href*="/how-to-allow-ads-browser"], a[href="https://www.twitch.tv/turbo"]'
         );
@@ -1124,6 +1125,15 @@
                 overlay.dataset.tasHidden = '';
                 overlay.style.setProperty('display', 'none', 'important');
                 console.log('[AD DEBUG] Hidden Twitch ad/Turbo promo overlay');
+            }
+        }
+        // Hide stream display ad (SDA) wrapper
+        const sdaElements = document.querySelectorAll('[data-test-selector="sda-wrapper"]');
+        for (let i = 0; i < sdaElements.length; i++) {
+            if (!sdaElements[i].dataset.tasHidden) {
+                sdaElements[i].dataset.tasHidden = '';
+                sdaElements[i].style.setProperty('display', 'none', 'important');
+                console.log('[AD DEBUG] Hidden Twitch stream display ad');
             }
         }
     }
