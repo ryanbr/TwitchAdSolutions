@@ -871,16 +871,14 @@ twitch-videoad.js text/javascript
                                         backupM3u8 = m3u8Text;
                                         break;
                                     }
-                                    // Hybrid: take first ad-laden backup unless we're already in
-                                    // a recovery freeze (ConsecutiveAllStrippedPolls >= 1). During
-                                    // a freeze, keep cycling other player types in case one is clean —
-                                    // a successful switch avoids the early-reload disruption entirely.
-                                    // Final type is taken as last resort either way.
-                                    const inFreeze = (streamInfo.ConsecutiveAllStrippedPolls || 0) >= 1;
-                                    if (hasAdTags(m3u8Text) && (!inFreeze || playerTypeIndex >= playerTypesToTry.length - 1)) {
-                                        if (inFreeze && playerTypeIndex >= playerTypesToTry.length - 1) {
-                                            console.log('[AD DEBUG] All backup player types ad-laden during freeze — taking ' + playerType + ' as last-resort fallback (strip+recovery path will engage)');
-                                        }
+                                    // Cycle through all player types looking for a clean backup. Only commit
+                                    // an ad-laden backup as a last resort when we've exhausted all options.
+                                    // PR #89 previously committed the first ad-laden type immediately — that
+                                    // caused the v58 freeze regression (issue #112) because the strip+recovery
+                                    // loop would engage even when a clean alternate was available on another
+                                    // player type.
+                                    if (hasAdTags(m3u8Text) && playerTypeIndex >= playerTypesToTry.length - 1) {
+                                        console.log('[AD DEBUG] All backup player types ad-laden — taking ' + playerType + ' as last-resort fallback (strip+recovery path will engage)');
                                         backupPlayerType = playerType;
                                         backupM3u8 = m3u8Text;
                                         break;
