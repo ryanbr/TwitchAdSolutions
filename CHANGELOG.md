@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v58.0.2
+
+### Bug Fixes
+- **Revert PR #89 — always cycle backup player types** — PR #89 committed the first ad-laden backup immediately on the assumption that Twitch serves ads across all player types simultaneously. In practice Twitch stages ads across types, and the premature commit fed an ad-laden m3u8 into the strip+recovery path, starving the buffer and causing 2+ minute freezes (regression identified via user bisect of `afd498c`). Restored cycling as the default; ad-laden backups are only committed as a last resort after `playerTypeIndex >= playerTypesToTry.length - 1`, i.e. the full player-type list has been walked (vaft) (#116, fixes #112)
+
 ## v58.0.1
 
 ### Bug Fixes
