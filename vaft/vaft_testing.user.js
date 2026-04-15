@@ -1664,13 +1664,28 @@
             player = player.playerInstance;
         }
         const playerState = findReactNode(reactRootNode, node => node.setSrc && node.setInitialPlaybackSettings);
-        if (!player && !getPlayerAndState.loggedNoPlayer) {
-            getPlayerAndState.loggedNoPlayer = true;
-            console.log('[AD DEBUG] Player not found — Twitch may have renamed setPlayerActive/mediaPlayerInstance');
+        // Grace period before logging "not found" warnings. The buffer monitor can tick
+        // before React has finished mounting the player, leading to a false-positive
+        // log that fires once on every page load. Only log if the null state persists
+        // for 10+ seconds — by then React is definitely mounted and a persistent null
+        // indicates real API drift (Twitch renamed setPlayerActive/setSrc/etc).
+        if (!player) {
+            if (!getPlayerAndState.firstPlayerNullAt) getPlayerAndState.firstPlayerNullAt = Date.now();
+            if (!getPlayerAndState.loggedNoPlayer && (Date.now() - getPlayerAndState.firstPlayerNullAt) > 10000) {
+                getPlayerAndState.loggedNoPlayer = true;
+                console.log('[AD DEBUG] Player not found for 10s+ — Twitch may have renamed setPlayerActive/mediaPlayerInstance');
+            }
+        } else {
+            getPlayerAndState.firstPlayerNullAt = 0;// reset on successful find
         }
-        if (!playerState && !getPlayerAndState.loggedNoState) {
-            getPlayerAndState.loggedNoState = true;
-            console.log('[AD DEBUG] Player state not found — Twitch may have renamed setSrc/setInitialPlaybackSettings');
+        if (!playerState) {
+            if (!getPlayerAndState.firstStateNullAt) getPlayerAndState.firstStateNullAt = Date.now();
+            if (!getPlayerAndState.loggedNoState && (Date.now() - getPlayerAndState.firstStateNullAt) > 10000) {
+                getPlayerAndState.loggedNoState = true;
+                console.log('[AD DEBUG] Player state not found for 10s+ — Twitch may have renamed setSrc/setInitialPlaybackSettings');
+            }
+        } else {
+            getPlayerAndState.firstStateNullAt = 0;// reset on successful find
         }
         return  {
             player: player,
