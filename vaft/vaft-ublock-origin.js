@@ -36,6 +36,13 @@ twitch-videoad.js text/javascript
     function declareOptions(scope) {
         scope.AdSignifiers = ['stitched', 'stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'EXT-X-DATERANGE:CLASS="twitch-stream-source"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-ad-quartile"', 'SCTE35-OUT'];
         scope.AdSegmentURLPatterns = ['/adsquared/', '/_404/', '/processing'];
+        // Precompiled regexes shared across the stripAdSegments hot path. Declared
+        // here (serialized into the worker blob with declareOptions) so literals
+        // inside the per-line strip loop don't recompile on every iteration — for
+        // a 100-line m3u8 at ~2 polls/sec during an ad break, hoisting the URL
+        // rewrite alone saves ~200 regex compilations per second.
+        scope.TwitchAdUrlRewriteRegex = /(X-TV-TWITCH-AD(?:-[A-Z]+)*-URLS?=")[^"]*(")/g;
+        scope.UriAttributeRegex = /URI="([^"]+)"/;
         scope.ClientID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
         scope.BackupPlayerTypes = [
             'embed',//Source
@@ -551,8 +558,7 @@ twitch-videoad.js text/javascript
                 inCueOut = false;
             }
             // Remove tracking urls which appear in the overlay UI
-            lines[i] = line
-                .replaceAll(/(X-TV-TWITCH-AD(?:-[A-Z]+)*-URLS?=")[^"]*(")/g, `$1${newAdUrl}$2`);
+            lines[i] = line.replaceAll(TwitchAdUrlRewriteRegex, `$1${newAdUrl}$2`);
             const isLiveSegment = line.includes(',live');
             if (i < lines.length - 1 && line.startsWith('#EXTINF') && (!isLiveSegment || stripAllSegments || AllSegmentsAreAdSegments || inCueOut)) {
                 const segmentUrl = lines[i + 1];
@@ -572,7 +578,7 @@ twitch-videoad.js text/javascript
                 // LL-HLS part: URI is inline as an attribute. Strip if it matches a known
                 // ad URL (already in cache from a parallel EXTINF strip, or matches a URL pattern).
                 // Without this, the player may use the parts path to fetch ad media via low-latency.
-                const partUriMatch = line.match(/URI="([^"]+)"/);
+                const partUriMatch = line.match(UriAttributeRegex);
                 const partUri = partUriMatch ? partUriMatch[1] : '';
                 if (partUri && (AdSegmentCache.has(partUri) || AdSegmentURLPatterns.some((p) => partUri.includes(p)))) {
                     AdSegmentCache.set(partUri, Date.now());
@@ -580,9 +586,14 @@ twitch-videoad.js text/javascript
                     hasStrippedAdSegments = true;
                 }
             }
-            if (AdSignifiers.some((s) => line.includes(s))) {
-                hasStrippedAdSegments = true;
-            }
+        }
+        // Moved out of the per-line loop: a per-line scan for any signifier is
+        // semantically equivalent to a single full-text scan, since the check has
+        // no line-level state — it just flips hasStrippedAdSegments = true on first
+        // match. One scan instead of N_lines * N_signifiers scans (~100x fewer
+        // includes() calls on a typical 100-line m3u8).
+        if (!hasStrippedAdSegments && AdSignifiers.some((s) => textStr.includes(s))) {
+            hasStrippedAdSegments = true;
         }
         if (hasStrippedAdSegments) {
             for (let i = 0; i < lines.length; i++) {
