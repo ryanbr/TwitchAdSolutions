@@ -1107,6 +1107,12 @@
                 }
             });
         }
+        // Catch persistent ad-break overlays (e.g. "taking an ad break / stick around")
+        // even after hasAds has transitioned to false. updateAdblockBanner only calls
+        // hideTwitchAdOverlays during the active ad break; some overlays have their own
+        // lifecycle and stay visible afterwards. Running here on every monitor tick
+        // (1-3s cadence) keeps them hidden without a dedicated interval.
+        try { hideTwitchAdOverlays(); } catch {}
         // Visibility-aware backoff: poll 3x slower when tab is hidden (but NOT during PiP — user is still watching)
         const shouldThrottle = typeof document !== 'undefined' && document.hidden && !document.pictureInPictureElement;
         const nextDelay = shouldThrottle ? PlayerBufferingDelay * 3 : PlayerBufferingDelay;
@@ -1134,6 +1140,34 @@
                 sdaElements[i].dataset.tasHidden = '';
                 sdaElements[i].style.setProperty('display', 'none', 'important');
                 console.log('[AD DEBUG] Hidden Twitch stream display ad');
+            }
+        }
+        // Hide "taking an ad break" / "stick around to support the stream" card.
+        // This overlay has its own lifecycle independent of the player's ad state — when
+        // the CSAI fast path keeps the player on the main stream, Twitch's overlay
+        // controller never receives the "player exited ad state" signal, so the card
+        // persists after the break ends. Text-match approach: scan for the distinctive
+        // phrases inside the player root (avoids chat false positives), walk up to find
+        // the overlay container. Scoped to the player root to keep cost bounded.
+        const textNodes = cachedPlayerRootDiv.querySelectorAll('span, p, h1, h2, h3');
+        for (let i = 0; i < textNodes.length; i++) {
+            const el = textNodes[i];
+            const text = (el.textContent || '').toLowerCase();
+            if (text.length === 0 || text.length > 300) continue;
+            if (text.includes('taking an ad break') ||
+                text.includes('stick around to support the stream') ||
+                text.includes('stick around to support the channel') ||
+                text.includes('right after this ad break')) {
+                // Walk up a few levels to find the card container (matches TTV-AB's approach).
+                // Prefer a known overlay class if one is nearby; otherwise fall back to a
+                // reasonable parent.
+                const overlay = el.closest('.player-overlay-background') || el.closest('[class*="overlay"]') || el.parentElement;
+                if (overlay && !overlay.dataset.tasAdBreakHidden) {
+                    overlay.dataset.tasAdBreakHidden = '';
+                    overlay.style.setProperty('display', 'none', 'important');
+                    console.log('[AD DEBUG] Hidden Twitch ad break card (taking an ad break / stick around)');
+                    break;// One card per tick is enough; don't over-scan
+                }
             }
         }
     }
