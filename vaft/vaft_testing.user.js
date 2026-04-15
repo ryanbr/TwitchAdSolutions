@@ -129,7 +129,6 @@
             CleanPlaylistCount: 0,
             ConsecutiveZeroStripBreaks: 0,
             SawCSAIFastPath: false,
-            SawCSAIPollsWithStrips: 0,// Counter for sticky CSAI clear (requires 2+ polls with strips)
             // Strip state
             IsStrippingAdSegments: false,
             NumStrippedAdSegments: 0,
@@ -828,7 +827,6 @@
                 streamInfo.EarlyReloadCount = 0;
                 streamInfo.EarlyReloadAtPoll = 0;
                 streamInfo.SawCSAIFastPath = false;
-                streamInfo.SawCSAIPollsWithStrips = 0;// Reset sticky-clear counter for new break
                 streamInfo.LastCommittedBackupPlayerType = null;
                 streamInfo.FreezeStartedAt = 0;
                 streamInfo.CycleRescuedThisBreak = false;
@@ -877,27 +875,14 @@
             // running on poll 2+, completing tens of seconds after the break ended, and
             // overwriting cleared streamInfo state with stale backup data (PR #124 from release).
             if (streamInfo.SawCSAIFastPath && !streamInfo.IsUsingModifiedM3U8) {
-                // Snapshot NumStrippedAdSegments before the strip call so we can detect
-                // whether THIS poll stripped a new EXTINF ad segment (vs just matching a
-                // signifier substring like 'stitched-ad' which is present on every CSAI
-                // break poll). IsStrippingAdSegments is too loose — it's set whenever
-                // hasStrippedAdSegments is true, including via signifier matches, so it
-                // fires on every CSAI break poll and defeats the 2-poll threshold.
-                const numStrippedBefore = streamInfo.NumStrippedAdSegments || 0;
+                // Stay on the sticky fast path for the whole break. No mid-break clear.
+                // stripAdSegments still handles any real EXTINF ad segments via the segment
+                // cache (cached URLs get BLANK_MP4 from the fetch hook), so ads are blocked
+                // even without backup switching. Skipping backup search for the whole CSAI
+                // break saves ~20 wasted fetches — the backup wouldn't help anyway since
+                // every player type has the same CSAI ads.
                 if (IsAdStrippingEnabled) {
                     textStr = stripAdSegments(textStr, false, streamInfo);
-                }
-                // Count polls where an actual new EXTINF ad segment was stripped. A single
-                // transient blip (Twitch serving one older buffered non-live segment on
-                // poll 2 of a pure-CSAI break) increments the counter by 1; sustained SSAI
-                // content increments it further on subsequent polls. Require 2+ polls
-                // before accepting as real SSAI and clearing the sticky flag.
-                if ((streamInfo.NumStrippedAdSegments || 0) > numStrippedBefore) {
-                    streamInfo.SawCSAIPollsWithStrips = (streamInfo.SawCSAIPollsWithStrips || 0) + 1;
-                }
-                if ((streamInfo.SawCSAIPollsWithStrips || 0) >= 2) {
-                    streamInfo.SawCSAIFastPath = false;
-                    console.log('[AD DEBUG] Sticky CSAI cleared — sustained SSAI content (' + streamInfo.SawCSAIPollsWithStrips + ' polls with strips)');
                 }
                 postMessage({
                     key: 'UpdateAdBlockBanner',
@@ -1172,7 +1157,6 @@
                 streamInfo.EarlyReloadAtPoll = 0;
                 streamInfo.TotalAllStrippedPolls = 0;
                 streamInfo.SawCSAIFastPath = false;// Clear sticky CSAI flag for next break
-                streamInfo.SawCSAIPollsWithStrips = 0;
                 // Auto-escalate cooldown: if 3+ reloads in last 2 min, triple the cooldown to reduce cascade pressure
                 if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
                 streamInfo.ReloadTimestamps = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000);
