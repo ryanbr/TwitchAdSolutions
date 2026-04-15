@@ -716,6 +716,7 @@
                 streamInfo.CycleRescuedThisBreak = false;
                 streamInfo.LastCommittedBackupPlayerType = null;
                 streamInfo.FreezeStartedAt = 0;
+                streamInfo.CsaiOnlyThisBreak = false;// Reset sticky CSAI flag for new break
                 console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', pod: ' + podLength + ' ad(s) (~' + (podLength * 30) + 's expected), signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
                 postMessage({
                     key: 'UpdateAdBlockBanner',
@@ -752,6 +753,34 @@
                     key: 'ReloadPlayer'
                 });
             }
+            // Sticky CSAI fast path: if a prior poll in THIS break already confirmed the break
+            // is CSAI-only (all segments live + no SSAI strips), stay on the fast path for the
+            // rest of the break even if Twitch starts serving older buffered segments that flip
+            // hasNonLiveSegment to true. Without this, a slow backup search kicked off on poll 2+
+            // can complete tens of seconds after the break already ended and overwrite cleared
+            // streamInfo state with stale backup data, causing buffer reconciliation failures and
+            // stuck loading circles. Clears itself below if any real SSAI segments arrive mid-break.
+            if (streamInfo.CsaiOnlyThisBreak && !streamInfo.IsUsingModifiedM3U8) {
+                if (IsAdStrippingEnabled) {
+                    textStr = stripAdSegments(textStr, false, streamInfo);
+                }
+                // If real SSAI content arrived during this break (NumStrippedAdSegments > 0 after
+                // the strip call), the break is actually mixed CSAI+SSAI — clear the sticky flag
+                // so the next poll can run backup search normally.
+                if (streamInfo.NumStrippedAdSegments > 0) {
+                    streamInfo.CsaiOnlyThisBreak = false;
+                    console.log('[AD DEBUG] Sticky CSAI cleared — SSAI content arrived mid-break');
+                }
+                postMessage({
+                    key: 'UpdateAdBlockBanner',
+                    isMidroll: streamInfo.IsMidroll,
+                    hasAds: streamInfo.IsShowingAd,
+                    isStrippingAdSegments: streamInfo.IsStrippingAdSegments,
+                    numStrippedAdSegments: streamInfo.NumStrippedAdSegments,
+                    activeBackupPlayerType: null
+                });
+                return textStr;
+            }
             // CSAI fast path: if all segments in the main stream are live, skip backup search.
             // CSAI ads are delivered outside the m3u8 — the main stream segments are clean.
             // Just strip tracking URLs and return the main stream directly, avoiding the
@@ -765,6 +794,7 @@
                 }
             }
             if (!hasNonLiveSegment && !streamInfo.IsUsingModifiedM3U8) {
+                streamInfo.CsaiOnlyThisBreak = true;// Mark break as confirmed CSAI so subsequent polls stay on the fast path
                 console.log('[AD DEBUG] CSAI fast path — all segments live, skipping backup search');
                 if (IsAdStrippingEnabled) {
                     textStr = stripAdSegments(textStr, false, streamInfo);
@@ -911,7 +941,14 @@
                 backupPlayerType = FallbackPlayerType;
                 backupM3u8 = fallbackM3u8;
             }
-            if (backupM3u8) {
+            // Stale-commit guard: multiple processM3U8 calls can be in flight concurrently for
+            // the same streamInfo (one per m3u8 poll). If this backup search started during the
+            // ad break but completed AFTER a later poll already ran the end-of-break reset
+            // (IsShowingAd = false, ActiveBackupPlayerType = null), committing the backup here
+            // would overwrite the cleared state and feed stale playlist data to the player,
+            // causing buffer reconciliation failures and a forced reload. Check IsShowingAd
+            // here to discard stale results.
+            if (backupM3u8 && streamInfo.IsShowingAd) {
                 textStr = backupM3u8;
                 streamInfo.LastCommittedBackupPlayerType = backupPlayerType;
                 if (streamInfo.ActiveBackupPlayerType != backupPlayerType) {
@@ -922,6 +959,8 @@
                     }
                     console.log(`Blocking${(streamInfo.IsMidroll ? ' midroll ' : ' ')}ads (${backupPlayerType}) — backup found in ${Date.now() - backupSearchStart}ms`);
                 }
+            } else if (backupM3u8 && !streamInfo.IsShowingAd) {
+                console.log('[AD DEBUG] Discarded stale backup commit (' + backupPlayerType + ', ' + (Date.now() - backupSearchStart) + 'ms) — break ended during search');
             } else {
                 console.log('[AD DEBUG] No ad-free backup stream found — ads may leak. Tried: ' + playerTypesToTry.slice(startIndex).join(', '));
             }
@@ -998,6 +1037,7 @@
                 streamInfo.EarlyReloadAwaitingResult = false;
                 streamInfo.EarlyReloadAtPoll = 0;
                 streamInfo.TotalAllStrippedPolls = 0;
+                streamInfo.CsaiOnlyThisBreak = false;
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
