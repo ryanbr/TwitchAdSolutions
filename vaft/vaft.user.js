@@ -765,6 +765,22 @@
                 if (IsAdStrippingEnabled) {
                     textStr = stripAdSegments(textStr, false, streamInfo);
                 }
+                // Early reload during prolonged freeze — mirrors the check in the normal
+                // backup-search path (line ~952) which we'd otherwise skip entirely by
+                // returning early from the sticky path. Without this, heavy SSAI breaks
+                // on CSAI-confirmed streams leave the player replaying the thin recovery
+                // cache for the full break duration (observed: 35.9s freeze on pod-1
+                // break, 3 all-stripped polls, 1-segment recovery cache).
+                // Bounded to maxEarlyReloads per ad in pod so reload loops are impossible.
+                const stickyMaxEarlyReloads = Math.max(1, streamInfo.PodLength || 1);
+                if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= EarlyReloadPollThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < stickyMaxEarlyReloads) {
+                    streamInfo.EarlyReloadTriggered = true;
+                    streamInfo.EarlyReloadAwaitingResult = true;
+                    streamInfo.EarlyReloadCount = (streamInfo.EarlyReloadCount || 0) + 1;
+                    streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
+                    console.log('[AD DEBUG] Early reload triggered (sticky path) — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls (~' + (streamInfo.ConsecutiveAllStrippedPolls * 2) + 's freeze) [' + streamInfo.EarlyReloadCount + '/' + stickyMaxEarlyReloads + ']');
+                    postMessage({ key: 'ReloadPlayer' });
+                }
                 postMessage({
                     key: 'UpdateAdBlockBanner',
                     isMidroll: streamInfo.IsMidroll,
