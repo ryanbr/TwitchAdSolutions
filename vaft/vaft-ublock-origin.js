@@ -75,13 +75,14 @@ twitch-videoad.js text/javascript
     const twitchWorkers = [];
     let cachedRootNode = null;// Cached #root DOM element (never changes in React SPAs)
     let cachedPlayerRootDiv = null;// Cached .video-player element
-    // Throttle timestamps for overlay-hide logs. Twitch's React tree re-mounts SDA
-    // wrappers and ad-break cards on every monitor tick, so the hide-and-log fires
-    // constantly during an ad break. Throttle to one log per 10s per hide type to
-    // keep the console readable without hiding that the feature is working.
-    let lastPromoOverlayLogAt = 0;
-    let lastSdaLogAt = 0;
-    let lastAdBreakCardLogAt = 0;
+    // One-shot flags for overlay-hide logs. Twitch's React tree re-mounts SDA
+    // wrappers and ad-break cards constantly during an ad break, so the
+    // hide-and-log fires hundreds of times. Log the first occurrence of each
+    // hide type per page load, then stay silent — the hide itself still runs
+    // on every tick via dataset-based dedup.
+    let loggedPromoOverlayHide = false;
+    let loggedSdaHide = false;
+    let loggedAdBreakCardHide = false;
     // Strings used to detect and handle conflicting Twitch worker overrides (e.g. TwitchNoSub)
     const workerStringConflicts = [
         'twitch',
@@ -1125,8 +1126,8 @@ twitch-videoad.js text/javascript
             if (overlay && !overlay.dataset.tasHidden) {
                 overlay.dataset.tasHidden = '';
                 overlay.style.setProperty('display', 'none', 'important');
-                if (Date.now() - lastPromoOverlayLogAt > 10000) {
-                    lastPromoOverlayLogAt = Date.now();
+                if (!loggedPromoOverlayHide) {
+                    loggedPromoOverlayHide = true;
                     console.log('[AD DEBUG] Hidden Twitch ad/Turbo promo overlay');
                 }
             }
@@ -1137,8 +1138,8 @@ twitch-videoad.js text/javascript
             if (!sdaElements[i].dataset.tasHidden) {
                 sdaElements[i].dataset.tasHidden = '';
                 sdaElements[i].style.setProperty('display', 'none', 'important');
-                if (Date.now() - lastSdaLogAt > 10000) {
-                    lastSdaLogAt = Date.now();
+                if (!loggedSdaHide) {
+                    loggedSdaHide = true;
                     console.log('[AD DEBUG] Hidden Twitch stream display ad');
                 }
             }
@@ -1163,8 +1164,8 @@ twitch-videoad.js text/javascript
                 if (overlay && !overlay.dataset.tasAdBreakHidden) {
                     overlay.dataset.tasAdBreakHidden = '';
                     overlay.style.setProperty('display', 'none', 'important');
-                    if (Date.now() - lastAdBreakCardLogAt > 10000) {
-                        lastAdBreakCardLogAt = Date.now();
+                    if (!loggedAdBreakCardHide) {
+                        loggedAdBreakCardHide = true;
                         console.log('[AD DEBUG] Hidden Twitch ad break card (taking an ad break / stick around)');
                     }
                     break;// One card per tick is enough; don't over-scan
