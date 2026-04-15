@@ -897,6 +897,23 @@ twitch-videoad.js text/javascript
                 if (IsAdStrippingEnabled) {
                     textStr = stripAdSegments(textStr, false, streamInfo);
                 }
+                // Early reload during prolonged freeze — mirrors the check in the normal
+                // backup-search path which we'd otherwise skip entirely by returning early
+                // from the sticky path. Without this, heavy SSAI breaks on CSAI-confirmed
+                // streams leave the player replaying the thin recovery cache for the full
+                // break duration. Bounded to maxEarlyReloads per ad in pod.
+                const stickyMaxEarlyReloads = Math.max(1, streamInfo.PodLength || 1);
+                const stickyRecoveryThin = (streamInfo.RecoverySegments?.length || 0) < 3;
+                const stickyEffectiveThreshold = stickyRecoveryThin ? 1 : EarlyReloadPollThreshold;
+                if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= stickyEffectiveThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < stickyMaxEarlyReloads) {
+                    streamInfo.EarlyReloadTriggered = true;
+                    streamInfo.EarlyReloadAwaitingResult = true;
+                    streamInfo.EarlyReloadCount = (streamInfo.EarlyReloadCount || 0) + 1;
+                    streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
+                    const stickyReason = stickyRecoveryThin ? ' (thin recovery cache: ' + (streamInfo.RecoverySegments?.length || 0) + ' segments)' : '';
+                    console.log('[AD DEBUG] Early reload triggered (sticky path) — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls' + stickyReason + ' [' + streamInfo.EarlyReloadCount + '/' + stickyMaxEarlyReloads + ']');
+                    postMessage({ key: 'ReloadPlayer' });
+                }
                 postMessage({
                     key: 'UpdateAdBlockBanner',
                     isMidroll: streamInfo.IsMidroll,
