@@ -14,6 +14,11 @@ twitch-videoad.js text/javascript
         scope.OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE = 'popout';
         scope.AD_SIGNIFIERS = ['stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'EXT-X-DATERANGE:CLASS="twitch-stream-source"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-ad-quartile"', 'SCTE35-OUT'];
         scope.AD_SEGMENT_URL_PATTERNS = ['/adsquared/', '/_404/', '/processing'];
+        // Precompiled regexes shared across the stripAdSegments hot path. Declared
+        // here (serialized into the worker blob with declareOptions) so literals
+        // inside the per-line strip loop don't recompile on every iteration.
+        scope.TWITCH_AD_URL_REWRITE_REGEX = /(X-TV-TWITCH-AD(?:-[A-Z]+)*-URLS?=")[^"]*(")/g;
+        scope.URI_ATTRIBUTE_REGEX = /URI="([^"]+)"/;
         scope.LIVE_SIGNIFIER = ',live';
         scope.CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
         // These are only really for Worker scope...
@@ -447,8 +452,7 @@ twitch-videoad.js text/javascript
                 inCueOut = false;
             }
             // Remove tracking urls which appear in the overlay UI
-            lines[i] = line
-                .replaceAll(/(X-TV-TWITCH-AD(?:-[A-Z]+)*-URLS?=")[^"]*(")/g, `$1${newAdUrl}$2`);
+            lines[i] = line.replaceAll(TWITCH_AD_URL_REWRITE_REGEX, `$1${newAdUrl}$2`);
             if (i < lines.length - 1 && line.startsWith('#EXTINF') && (!line.includes(',live') || stripAllSegments || AllSegmentsAreAdSegments || inCueOut)) {
                 const segmentUrl = lines[i + 1];
                 if (!AdSegmentCache.has(segmentUrl)) {
@@ -472,7 +476,7 @@ twitch-videoad.js text/javascript
                 if (line.startsWith('#EXT-X-TWITCH-PREFETCH:')) {
                     hintUrl = line.substring('#EXT-X-TWITCH-PREFETCH:'.length).trim();
                 } else {
-                    const hintMatch = line.match(/URI="([^"]+)"/);
+                    const hintMatch = line.match(URI_ATTRIBUTE_REGEX);
                     hintUrl = hintMatch ? hintMatch[1] : '';
                 }
                 if (hintUrl && (AdSegmentCache.has(hintUrl) || AD_SEGMENT_URL_PATTERNS.some((p) => hintUrl.includes(p)))) {
@@ -480,9 +484,14 @@ twitch-videoad.js text/javascript
                     hasStrippedAdSegments = true;
                 }
             }
-            if (AD_SIGNIFIERS.some((s) => line.includes(s))) {
-                hasStrippedAdSegments = true;
-            }
+        }
+        // Moved out of the per-line loop: a per-line scan for any signifier is
+        // semantically equivalent to a single full-text scan, since the check has
+        // no line-level state — it just flips hasStrippedAdSegments = true on first
+        // match. One scan instead of N_lines * N_signifiers scans (~100x fewer
+        // includes() calls on a typical 100-line m3u8).
+        if (!hasStrippedAdSegments && AD_SIGNIFIERS.some((s) => textStr.includes(s))) {
+            hasStrippedAdSegments = true;
         }
         if (hasStrippedAdSegments) {
             for (let i = 0; i < lines.length; i++) {
