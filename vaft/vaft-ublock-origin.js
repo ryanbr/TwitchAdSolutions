@@ -627,11 +627,24 @@ twitch-videoad.js text/javascript
         }
         streamInfo.IsStrippingAdSegments = hasStrippedAdSegments;
         const now = Date.now();
-        AdSegmentCache.forEach((value, key, map) => {
-            if (value < now - 120000) {
-                map.delete(key);
+        // Throttle cache prune to once per 60s. The 120s TTL gives plenty of headroom
+        // and scanning the full cache on every m3u8 poll adds up during heavy ad break
+        // sequences (LL-HLS can poll multiple times per second). Ported from TTV-AB.
+        if (!streamInfo.LastAdCachePruneAt || now - streamInfo.LastAdCachePruneAt > 60000) {
+            streamInfo.LastAdCachePruneAt = now;
+            AdSegmentCache.forEach((value, key, map) => {
+                if (value < now - 120000) {
+                    map.delete(key);
+                }
+            });
+            // Diagnostic: log once per streamInfo when the cache crosses 1000 entries,
+            // so cache bloat from a future TTL/prune bug would surface in user reports
+            // instead of staying invisible.
+            if (AdSegmentCache.size > 1000 && !streamInfo.LoggedAdCacheSize1k) {
+                streamInfo.LoggedAdCacheSize1k = true;
+                console.log('[AD DEBUG] AdSegmentCache crossed 1000 entries (now ' + AdSegmentCache.size + ') — possible cache bloat');
             }
-        });
+        }
         return lines.join('\n');
     }
     // Find the closest matching stream URL for a given resolution from a master m3u8
