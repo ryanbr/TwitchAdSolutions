@@ -34,7 +34,7 @@ twitch-videoad.js text/javascript
     window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
     // Configuration and state shared between window and worker scopes
     function declareOptions(scope) {
-        scope.AdSignifiers = ['stitched', 'stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'EXT-X-DATERANGE:CLASS="twitch-stream-source"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-ad-quartile"', 'SCTE35-OUT'];
+        scope.AdSignifiers = ['stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'EXT-X-DATERANGE:CLASS="twitch-stream-source"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-ad-quartile"', 'SCTE35-OUT'];
         scope.AdSegmentURLPatterns = ['/adsquared/', '/_404/', '/processing'];
         scope.ClientID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
         scope.BackupPlayerTypes = [
