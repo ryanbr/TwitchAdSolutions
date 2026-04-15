@@ -91,6 +91,66 @@ twitch-videoad.js text/javascript
         fn.toString = () => 'function ' + name + '() { [native code] }';
         return fn;
     }
+    // Creates a new StreamInfo with the full field shape declared up-front. Every
+    // field read or written anywhere in the worker code should be initialized here,
+    // so the complete shape is visible in one place instead of drifting as new
+    // fields get lazily assigned across the codebase. When adding a new streamInfo
+    // field, declare it here first with an appropriate zero value, then assign to
+    // it from the code path that needs it.
+    function createStreamInfo(channelName, encodingsM3u8, usherParams) {
+        return {
+            // Identity
+            ChannelName: channelName,
+            EncodingsM3U8: encodingsM3u8,
+            UsherParams: usherParams,
+            // Resolutions / URL map
+            Urls: [],// xxx.m3u8 -> { Resolution: "284x160", FrameRate: 30.0 }
+            ResolutionList: [],
+            RequestedAds: new Set(),
+            // Modified m3u8 state
+            ModifiedM3U8: null,
+            IsUsingModifiedM3U8: false,
+            // Ad-break state
+            IsShowingAd: false,
+            IsMidroll: false,
+            AdBreakStartedAt: 0,
+            PodLength: 1,
+            CleanPlaylistCount: 0,
+            ConsecutiveZeroStripBreaks: 0,
+            SawCSAIFastPath: false,
+            // Strip state
+            IsStrippingAdSegments: false,
+            NumStrippedAdSegments: 0,
+            RecoverySegments: [],
+            RecoveryStartSeq: undefined,// LOAD-BEARING: explicitly checked with `!== undefined` at the recovery injection site. Must stay undefined, not 0.
+            FreezeStartedAt: 0,
+            ConsecutiveAllStrippedPolls: 0,
+            TotalAllStrippedPolls: 0,
+            // Backup player type cycling
+            BackupEncodingsM3U8Cache: [],
+            ActiveBackupPlayerType: null,
+            PinnedBackupPlayerType: null,
+            LastCommittedBackupPlayerType: null,
+            FailedBackupPlayerTypes: new Map(),// Map<playerType, timestamp> — failures expire after 15s for retry
+            LoggedBackupAdsByType: null,// lazy-init to Set on first "backup has ads" log
+            CycleRescuedThisBreak: false,
+            LastBackupSwitch: 0,
+            // Early reload
+            EarlyReloadCount: 0,
+            EarlyReloadAtPoll: 0,
+            EarlyReloadTriggered: false,
+            EarlyReloadAwaitingResult: false,
+            // Reload cooldown
+            LastPlayerReload: 0,
+            ReloadTimestamps: [],
+            // Ad segment cache throttling (PR #121)
+            LastAdCachePruneAt: 0,
+            LoggedAdCacheSize1k: false,
+            // Diagnostic flags (once-per-session)
+            HasCheckedUnknownTags: false,
+            HasLoggedAdAttributes: false,
+        };
+    }
     const loggedCsaiTypes = new Set();
     let isActivelyStrippingAds = false;
     let localStorageHookFailed = false;
@@ -206,6 +266,7 @@ twitch-videoad.js text/javascript
                     ${getWasmWorkerJs.toString()}
                     ${getServerTimeFromM3u8.toString()}
                     ${replaceServerTimeInM3u8.toString()}
+                    ${createStreamInfo.toString()}
                     const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
                     declareOptions(self);
                     ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};
@@ -387,31 +448,7 @@ twitch-videoad.js text/javascript
                                 }
                                 if (streamInfo == null || streamInfo.EncodingsM3U8 == null) {
                                     console.log('[AD DEBUG] New stream session — channel: ' + channelName + ', API: ' + (V2API ? 'v2' : 'v1'));
-                                    StreamInfos[channelName] = streamInfo = {
-                                        ChannelName: channelName,
-                                        IsShowingAd: false,
-                                        LastPlayerReload: 0,
-                                        EncodingsM3U8: encodingsM3u8,
-                                        ModifiedM3U8: null,
-                                        IsUsingModifiedM3U8: false,
-                                        UsherParams: parsedUrl.search,
-                                        RequestedAds: new Set(),
-                                        Urls: [],// xxx.m3u8 -> { Resolution: "284x160", FrameRate: 30.0 }
-                                        ResolutionList: [],
-                                        BackupEncodingsM3U8Cache: [],
-                                        ActiveBackupPlayerType: null,
-                                        PinnedBackupPlayerType: null,
-                                        HasCheckedUnknownTags: false,
-                                        IsMidroll: false,
-                                        IsStrippingAdSegments: false,
-                                        NumStrippedAdSegments: 0,
-                                        RecoverySegments: [],
-                                        FailedBackupPlayerTypes: new Map(),// Map<playerType, timestamp> — failures expire after 15s for retry
-                                        CleanPlaylistCount: 0,
-                                        HasLoggedAdAttributes: false,
-                                        LoggedBackupAdsByType: null,
-                                        RecoveryStartSeq: undefined
-                                    };
+                                    StreamInfos[channelName] = streamInfo = createStreamInfo(channelName, encodingsM3u8, parsedUrl.search);
                                     const lines = encodingsM3u8.split(/\r?\n/);
                                     for (let i = 0; i < lines.length - 1; i++) {
                                         // Accept v2 API variant URLs (raw CDN URLs without '.m3u8').

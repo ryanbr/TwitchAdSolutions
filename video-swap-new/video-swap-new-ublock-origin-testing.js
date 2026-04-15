@@ -53,6 +53,46 @@ twitch-videoad.js text/javascript
             }
         }
     }
+    // Creates a new StreamInfo with the full field shape declared up-front. Every
+    // field read or written anywhere in the worker code should be initialized here,
+    // so the complete shape is visible in one place instead of drifting as new
+    // fields get lazily assigned across the codebase. When adding a new streamInfo
+    // field, declare it here first with an appropriate zero value, then assign to
+    // it from the code path that needs it.
+    function createStreamInfo(channelName, usherParams) {
+        return {
+            // Identity / lifecycle
+            ChannelName: channelName,
+            LastSeenAt: Date.now(),
+            UsherParams: usherParams,
+            // Resolutions / URL map
+            Urls: new Map(),
+            RequestedAds: new Set(),
+            // Encoding state
+            Encodings: null,
+            BackupEncodings: null,
+            BackupEncodingsStatus: new Map(),
+            BackupEncodingsPlayerTypeIndex: -1,
+            PinnedBackupPlayerType: null,
+            IsMovingOffBackupEncodings: false,
+            UseFallbackStream: false,
+            // Ad-break state
+            IsMidroll: false,
+            CleanPlaylistCount: 0,
+            // Strip state
+            IsStrippingAdSegments: false,
+            NumStrippedAdSegments: 0,
+            RecoverySegments: [],
+            RecoveryStartSeq: undefined,// LOAD-BEARING: explicitly checked with `!== undefined` at the recovery injection site. Must stay undefined, not 0.
+            // Ad segment cache throttling (PR #121)
+            LastAdCachePruneAt: 0,
+            LoggedAdCacheSize1k: false,
+            // Diagnostic flags (once-per-session)
+            HasCheckedUnknownTags: false,
+            HasLoggedAdAttributes: false,
+            HasLoggedCsaiFastPath: false,
+        };
+    }
     const loggedCsaiTypes = new Set();
     let twitchPlayerAndState = null;
     let localStorageHookFailed = false;
@@ -166,6 +206,7 @@ twitch-videoad.js text/javascript
                     ${getWasmWorkerJs.toString()}
                     ${getServerTimeFromM3u8.toString()}
                     ${replaceServerTimeInM3u8.toString()}
+                    ${createStreamInfo.toString()}
                     ${getStreamUrlForResolution.toString()}
                     ${updateAdblockBannerForStream.toString()}
                     ${pruneStreamInfos.toString()}
@@ -700,26 +741,7 @@ twitch-videoad.js text/javascript
                         }
                         let serverTime = null;
                         if (streamInfo == null || streamInfo.Encodings == null) {
-                            StreamInfos[channelName] = streamInfo = {
-                                LastSeenAt: Date.now(),
-                                RequestedAds: new Set(),
-                                Encodings: null,
-                                BackupEncodings: null,
-                                BackupEncodingsStatus: new Map(),
-                                BackupEncodingsPlayerTypeIndex: -1,
-                                PinnedBackupPlayerType: null,
-                                HasCheckedUnknownTags: false,
-                                IsMovingOffBackupEncodings: false,
-                                IsMidroll: false,
-                                IsStrippingAdSegments: false,
-                                NumStrippedAdSegments: 0,
-                                RecoverySegments: [],
-                                CleanPlaylistCount: 0,
-                                UseFallbackStream: false,
-                                ChannelName: channelName,
-                                UsherParams: (new URL(url)).search,
-                                Urls: new Map(),
-                            };
+                            StreamInfos[channelName] = streamInfo = createStreamInfo(channelName, (new URL(url)).search);
                             const encodingsM3u8Response = await realFetch(url, options);
                             if (encodingsM3u8Response != null && encodingsM3u8Response.status === 200) {
                                 const encodingsM3u8 = await encodingsM3u8Response.text();
