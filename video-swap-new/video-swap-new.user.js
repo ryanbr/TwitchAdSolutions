@@ -302,10 +302,14 @@
     function setStreamInfoUrls(streamInfo, encodingsM3u8) {
         const lines = encodingsM3u8.split(/\r?\n/);
         for (let i = 0; i < lines.length; i++) {
-            if (!lines[i].startsWith('#') && lines[i].includes('.m3u8')) {
+            // v2 API variant URLs are raw CDN URLs without '.m3u8' in the path.
+            // Accept absolute URLs (containing '://') alongside '.m3u8' URLs.
+            const trimmed = lines[i]?.trim();
+            if (trimmed && !trimmed.startsWith('#') && (trimmed.includes('.m3u8') || trimmed.includes('://'))) {
                 StreamInfosByUrl[lines[i].trimEnd()] = streamInfo;
             }
-            if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
+            const nextLine = lines[i + 1]?.trim();
+            if (lines[i].startsWith('#EXT-X-STREAM-INF') && nextLine && !nextLine.startsWith('#') && (nextLine.includes('.m3u8') || nextLine.includes('://'))) {
                 const attributes = parseAttributes(lines[i]);
                 const resolution = attributes['RESOLUTION'];
                 if (resolution) {
@@ -800,7 +804,9 @@
         let closestResolutionUrl = null;
         let closestResolutionDifference = Infinity;
         for (let i = 0; i < encodingsLines.length - 1; i++) {
-            if (encodingsLines[i].startsWith('#EXT-X-STREAM-INF') && encodingsLines[i + 1].includes('.m3u8')) {
+            // Accept v2 API variant URLs (raw CDN URLs without '.m3u8').
+            const nextLine = encodingsLines[i + 1]?.trim();
+            if (encodingsLines[i].startsWith('#EXT-X-STREAM-INF') && nextLine && !nextLine.startsWith('#') && (nextLine.includes('.m3u8') || nextLine.includes('://'))) {
                 const attributes = parseAttributes(encodingsLines[i]);
                 const resolution = attributes['RESOLUTION'];
                 const frameRate = attributes['FRAME-RATE'];
