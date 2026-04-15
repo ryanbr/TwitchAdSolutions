@@ -589,6 +589,28 @@
                     lines[i] = '';
                     hasStrippedAdSegments = true;
                 }
+            } else if (line.startsWith('#EXT-X-TWITCH-PREFETCH:') || line.startsWith('#EXT-X-PRELOAD-HINT:')) {
+                // LL-HLS prefetch/preload hints can point at upcoming ad segments before any
+                // EXTINF line or ad signifier has materialized in the playlist. If we only
+                // strip prefetch hints AFTER hasStrippedAdSegments is set, the first poll of
+                // an ad break can leak a prefetch hint pointing at an ad URL — the player
+                // then pre-fetches ad media via the LL-HLS path before our usual strip catches
+                // up, producing an ad flash. Detect the ad URL here so hasStrippedAdSegments
+                // flips on the first poll and the post-loop unconditional prefetch strip fires.
+                // Ported from TTV-AB 52b41b4.
+                // Format: '#EXT-X-TWITCH-PREFETCH:https://url/here.ts' (raw URL after the colon)
+                //     or: '#EXT-X-PRELOAD-HINT:TYPE=PART,URI="url"' (URI attribute)
+                let hintUrl = '';
+                if (line.startsWith('#EXT-X-TWITCH-PREFETCH:')) {
+                    hintUrl = line.substring('#EXT-X-TWITCH-PREFETCH:'.length).trim();
+                } else {
+                    const hintMatch = line.match(/URI="([^"]+)"/);
+                    hintUrl = hintMatch ? hintMatch[1] : '';
+                }
+                if (hintUrl && (AdSegmentCache.has(hintUrl) || AdSegmentURLPatterns.some((p) => hintUrl.includes(p)))) {
+                    AdSegmentCache.set(hintUrl, Date.now());
+                    hasStrippedAdSegments = true;
+                }
             }
             if (AdSignifiers.some((s) => line.includes(s))) {
                 hasStrippedAdSegments = true;
