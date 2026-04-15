@@ -409,7 +409,9 @@ twitch-videoad.js text/javascript
                                     };
                                     const lines = encodingsM3u8.split(/\r?\n/);
                                     for (let i = 0; i < lines.length - 1; i++) {
-                                        if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
+                                        // Accept v2 API variant URLs (raw CDN URLs without '.m3u8').
+                                        const nextLine = lines[i + 1]?.trim();
+                                        if (lines[i].startsWith('#EXT-X-STREAM-INF') && nextLine && !nextLine.startsWith('#') && (nextLine.includes('.m3u8') || nextLine.includes('://'))) {
                                             const attributes = parseAttributes(lines[i]);
                                             const resolution = attributes['RESOLUTION'];
                                             if (resolution) {
@@ -607,6 +609,22 @@ twitch-videoad.js text/javascript
                     lines[i] = '';
                     hasStrippedAdSegments = true;
                 }
+            } else if (line.startsWith('#EXT-X-TWITCH-PREFETCH:') || line.startsWith('#EXT-X-PRELOAD-HINT:')) {
+                // LL-HLS prefetch/preload hints can point at upcoming ad segments before any
+                // EXTINF line or ad signifier has materialized in the playlist. Detect here so
+                // hasStrippedAdSegments flips on the first poll and the post-loop unconditional
+                // prefetch strip fires. Ported from TTV-AB 52b41b4.
+                let hintUrl = '';
+                if (line.startsWith('#EXT-X-TWITCH-PREFETCH:')) {
+                    hintUrl = line.substring('#EXT-X-TWITCH-PREFETCH:'.length).trim();
+                } else {
+                    const hintMatch = line.match(/URI="([^"]+)"/);
+                    hintUrl = hintMatch ? hintMatch[1] : '';
+                }
+                if (hintUrl && (AdSegmentCache.has(hintUrl) || AdSegmentURLPatterns.some((p) => hintUrl.includes(p)))) {
+                    AdSegmentCache.set(hintUrl, Date.now());
+                    hasStrippedAdSegments = true;
+                }
             }
             if (AdSignifiers.some((s) => line.includes(s))) {
                 hasStrippedAdSegments = true;
@@ -671,7 +689,9 @@ twitch-videoad.js text/javascript
         let closestResolutionUrl = null;
         let closestResolutionDifference = Infinity;
         for (let i = 0; i < encodingsLines.length - 1; i++) {
-            if (encodingsLines[i].startsWith('#EXT-X-STREAM-INF') && encodingsLines[i + 1].includes('.m3u8')) {
+            // Accept v2 API variant URLs (raw CDN URLs without '.m3u8').
+            const nextLine = encodingsLines[i + 1]?.trim();
+            if (encodingsLines[i].startsWith('#EXT-X-STREAM-INF') && nextLine && !nextLine.startsWith('#') && (nextLine.includes('.m3u8') || nextLine.includes('://'))) {
                 const attributes = parseAttributes(encodingsLines[i]);
                 const resolution = attributes['RESOLUTION'];
                 const frameRate = attributes['FRAME-RATE'];
