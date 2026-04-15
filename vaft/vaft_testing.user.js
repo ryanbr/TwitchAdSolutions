@@ -129,6 +129,7 @@
             CleanPlaylistCount: 0,
             ConsecutiveZeroStripBreaks: 0,
             SawCSAIFastPath: false,
+            SawCSAIPollsWithStrips: 0,// Counter for sticky CSAI clear (requires 2+ polls with strips)
             // Strip state
             IsStrippingAdSegments: false,
             NumStrippedAdSegments: 0,
@@ -825,6 +826,7 @@
                 streamInfo.EarlyReloadCount = 0;
                 streamInfo.EarlyReloadAtPoll = 0;
                 streamInfo.SawCSAIFastPath = false;
+                streamInfo.SawCSAIPollsWithStrips = 0;// Reset sticky-clear counter for new break
                 streamInfo.LastCommittedBackupPlayerType = null;
                 streamInfo.FreezeStartedAt = 0;
                 streamInfo.CycleRescuedThisBreak = false;
@@ -876,11 +878,20 @@
                 if (IsAdStrippingEnabled) {
                     textStr = stripAdSegments(textStr, false, streamInfo);
                 }
-                // If real SSAI content arrived mid-break, clear the sticky flag so the next
-                // poll runs the normal backup search path.
-                if (streamInfo.NumStrippedAdSegments > 0) {
+                // Count polls where stripAdSegments saw actual ad segments, not just
+                // a transient single non-live segment (common on pure-CSAI breaks where
+                // Twitch serves older buffered frames on poll 2). The original single-poll
+                // trigger was flipping the sticky flag on ~100% of CSAI breaks, defeating
+                // the whole-break optimization. Require 2+ polls with strips before
+                // accepting this as real SSAI content. Uses IsStrippingAdSegments (set by
+                // stripAdSegments per-call) rather than NumStrippedAdSegments (cumulative
+                // with mid-break resets) for a cleaner per-poll signal.
+                if (streamInfo.IsStrippingAdSegments) {
+                    streamInfo.SawCSAIPollsWithStrips = (streamInfo.SawCSAIPollsWithStrips || 0) + 1;
+                }
+                if ((streamInfo.SawCSAIPollsWithStrips || 0) >= 2) {
                     streamInfo.SawCSAIFastPath = false;
-                    console.log('[AD DEBUG] Sticky CSAI cleared — SSAI content arrived mid-break');
+                    console.log('[AD DEBUG] Sticky CSAI cleared — sustained SSAI content (' + streamInfo.SawCSAIPollsWithStrips + ' polls with strips)');
                 }
                 postMessage({
                     key: 'UpdateAdBlockBanner',
@@ -1155,6 +1166,7 @@
                 streamInfo.EarlyReloadAtPoll = 0;
                 streamInfo.TotalAllStrippedPolls = 0;
                 streamInfo.SawCSAIFastPath = false;// Clear sticky CSAI flag for next break
+                streamInfo.SawCSAIPollsWithStrips = 0;
                 // Auto-escalate cooldown: if 3+ reloads in last 2 min, triple the cooldown to reduce cascade pressure
                 if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
                 streamInfo.ReloadTimestamps = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000);
