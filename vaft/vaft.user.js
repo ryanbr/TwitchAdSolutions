@@ -717,7 +717,6 @@
                 streamInfo.LastCommittedBackupPlayerType = null;
                 streamInfo.FreezeStartedAt = 0;
                 streamInfo.CsaiOnlyThisBreak = false;// Reset sticky CSAI flag for new break
-                streamInfo.CsaiPollsWithStrips = 0;// Reset sticky-clear counter for new break
                 console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', pod: ' + podLength + ' ad(s) (~' + (podLength * 30) + 's expected), signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
                 postMessage({
                     key: 'UpdateAdBlockBanner',
@@ -755,34 +754,16 @@
                 });
             }
             // Sticky CSAI fast path: if a prior poll in THIS break already confirmed the break
-            // is CSAI-only (all segments live + no SSAI strips), stay on the fast path for the
-            // rest of the break even if Twitch starts serving older buffered segments that flip
-            // hasNonLiveSegment to true. Without this, a slow backup search kicked off on poll 2+
-            // can complete tens of seconds after the break already ended and overwrite cleared
-            // streamInfo state with stale backup data, causing buffer reconciliation failures and
-            // stuck loading circles. Clears itself below if any real SSAI segments arrive mid-break.
+            // is CSAI-only (all segments live on poll 1), stay on the fast path for the rest
+            // of the break. stripAdSegments still handles any real EXTINF ad segments that
+            // show up on later polls (they get cached and the fetch hook returns BLANK_MP4),
+            // so ads are blocked even without the backup switch. Skipping backup search for
+            // the whole CSAI break saves ~20 wasted fetches per break — the backup wouldn't
+            // help anyway since every player type has the same CSAI ads. Flag is cleared
+            // only at break end (IsShowingAd=false path).
             if (streamInfo.CsaiOnlyThisBreak && !streamInfo.IsUsingModifiedM3U8) {
-                // Snapshot NumStrippedAdSegments before the strip call so we can detect
-                // whether THIS poll stripped a new EXTINF ad segment (vs just matching a
-                // signifier substring like 'stitched-ad' which is present on every CSAI
-                // break poll). IsStrippingAdSegments is too loose — it's set whenever
-                // hasStrippedAdSegments is true, including via signifier matches, so it
-                // fires on every CSAI break poll and defeats the 2-poll threshold.
-                const numStrippedBefore = streamInfo.NumStrippedAdSegments || 0;
                 if (IsAdStrippingEnabled) {
                     textStr = stripAdSegments(textStr, false, streamInfo);
-                }
-                // Count polls where an actual new EXTINF ad segment was stripped. A single
-                // transient blip (Twitch serving one older buffered non-live segment on
-                // poll 2 of a pure-CSAI break) increments the counter by 1; sustained SSAI
-                // content increments it further on subsequent polls. Require 2+ polls
-                // before accepting as real SSAI and clearing the sticky flag.
-                if ((streamInfo.NumStrippedAdSegments || 0) > numStrippedBefore) {
-                    streamInfo.CsaiPollsWithStrips = (streamInfo.CsaiPollsWithStrips || 0) + 1;
-                }
-                if ((streamInfo.CsaiPollsWithStrips || 0) >= 2) {
-                    streamInfo.CsaiOnlyThisBreak = false;
-                    console.log('[AD DEBUG] Sticky CSAI cleared — sustained SSAI content (' + streamInfo.CsaiPollsWithStrips + ' polls with strips)');
                 }
                 postMessage({
                     key: 'UpdateAdBlockBanner',
@@ -1051,7 +1032,6 @@
                 streamInfo.EarlyReloadAtPoll = 0;
                 streamInfo.TotalAllStrippedPolls = 0;
                 streamInfo.CsaiOnlyThisBreak = false;
-                streamInfo.CsaiPollsWithStrips = 0;
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
