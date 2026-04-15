@@ -432,7 +432,9 @@
                                         RecoveryStartSeq: undefined,
                                         CleanPlaylistCount: 0,
                                         ReloadTimestamps: [],
-                                        ConsecutiveZeroStripBreaks: 0
+                                        ConsecutiveZeroStripBreaks: 0,
+                                        LastCleanNativeM3U8: null,// Full-playlist snapshot cached during non-ad polls for all-stripped recovery (mirrors TTV-AB LastCleanNativeM3U8)
+                                        LastCleanNativePlaylistAt: 0
                                     };
                                     const lines = encodingsM3u8.split(/\r?\n/);
                                     for (let i = 0; i < lines.length - 1; i++) {
@@ -613,23 +615,37 @@
                 streamInfo.RecoveryStartSeq = seq + Math.max(0, liveSegments.length - streamInfo.RecoverySegments.length);
             }
         }
-        // If all segments were stripped, restore cached recovery segments to prevent black screen
-        if (hasStrippedAdSegments && liveSegments.length === 0 && streamInfo.RecoverySegments && streamInfo.RecoverySegments.length > 0) {
+        // If all segments were stripped, try to prevent black screen via recovery content.
+        // Prefer the full-playlist snapshot from a recent non-ad poll (mirrors TTV-AB
+        // LastCleanNativeM3U8 approach) — gives the player 4-6 live segments worth of
+        // content vs the thin per-segment recovery cache. Falls back to the per-segment
+        // cache if the snapshot is stale or missing.
+        if (hasStrippedAdSegments && liveSegments.length === 0) {
             streamInfo.ConsecutiveAllStrippedPolls = (streamInfo.ConsecutiveAllStrippedPolls || 0) + 1;
             streamInfo.TotalAllStrippedPolls = (streamInfo.TotalAllStrippedPolls || 0) + 1;
             if (!streamInfo.FreezeStartedAt) streamInfo.FreezeStartedAt = Date.now();
-            console.log('[AD DEBUG] All segments stripped — restoring ' + streamInfo.RecoverySegments.length + ' recovery segments');
-            if (streamInfo.RecoveryStartSeq !== undefined) {
-                for (let j = 0; j < lines.length; j++) {
-                    if (lines[j].startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
-                        lines[j] = '#EXT-X-MEDIA-SEQUENCE:' + streamInfo.RecoveryStartSeq;
-                        break;
+            // Primary: fresh full-playlist snapshot (< 1.5s old, must not itself contain ad markers)
+            const snapshotAge = streamInfo.LastCleanNativePlaylistAt ? (Date.now() - streamInfo.LastCleanNativePlaylistAt) : Infinity;
+            if (streamInfo.LastCleanNativeM3U8 && snapshotAge <= 1500 && !hasAdTags(streamInfo.LastCleanNativeM3U8)) {
+                console.log('[AD DEBUG] All segments stripped — reusing last clean native playlist (' + snapshotAge + 'ms old)');
+                streamInfo.IsStrippingAdSegments = hasStrippedAdSegments;
+                return streamInfo.LastCleanNativeM3U8;
+            }
+            // Fallback: per-segment recovery cache (existing behavior)
+            if (streamInfo.RecoverySegments && streamInfo.RecoverySegments.length > 0) {
+                console.log('[AD DEBUG] All segments stripped — restoring ' + streamInfo.RecoverySegments.length + ' recovery segments');
+                if (streamInfo.RecoveryStartSeq !== undefined) {
+                    for (let j = 0; j < lines.length; j++) {
+                        if (lines[j].startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+                            lines[j] = '#EXT-X-MEDIA-SEQUENCE:' + streamInfo.RecoveryStartSeq;
+                            break;
+                        }
                     }
                 }
-            }
-            for (let j = 0; j < streamInfo.RecoverySegments.length; j++) {
-                lines.push(streamInfo.RecoverySegments[j].extinf);
-                lines.push(streamInfo.RecoverySegments[j].url);
+                for (let j = 0; j < streamInfo.RecoverySegments.length; j++) {
+                    lines.push(streamInfo.RecoverySegments[j].extinf);
+                    lines.push(streamInfo.RecoverySegments[j].url);
+                }
             }
         } else if (liveSegments.length > 0) {
             // Reset freeze counter when live segments are available
@@ -698,6 +714,18 @@
             }
         }
         const haveAdTags = hasAdTags(textStr) || SimulatedAdsDepth > 0;
+        // Cache the clean main stream m3u8 for all-stripped recovery fallback.
+        // Updated during non-ad polls (outside of any ad break), so by the time an ad
+        // break starts, streamInfo.LastCleanNativeM3U8 holds a snapshot ~1-2 seconds old
+        // with several live segments. When heavy SSAI breaks leave the main playlist
+        // entirely stripped, stripAdSegments replays this snapshot instead of the thin
+        // RecoverySegments array — typically gives the player 4-6 live segments of
+        // content to chew on vs the 1-2 cached individual segments.
+        // Mirrors TTV-AB src/modules/processor.ts:733-736.
+        if (!haveAdTags && !streamInfo.IsShowingAd && textStr.indexOf('#EXTINF') !== -1) {
+            streamInfo.LastCleanNativeM3U8 = textStr;
+            streamInfo.LastCleanNativePlaylistAt = Date.now();
+        }
         if (haveAdTags) {
             streamInfo.CleanPlaylistCount = 0;
             streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
