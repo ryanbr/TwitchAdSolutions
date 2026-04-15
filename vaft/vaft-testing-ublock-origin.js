@@ -864,18 +864,22 @@ twitch-videoad.js text/javascript
             // running on poll 2+, completing tens of seconds after the break ended, and
             // overwriting cleared streamInfo state with stale backup data (PR #124 from release).
             if (streamInfo.SawCSAIFastPath && !streamInfo.IsUsingModifiedM3U8) {
+                // Snapshot NumStrippedAdSegments before the strip call so we can detect
+                // whether THIS poll stripped a new EXTINF ad segment (vs just matching a
+                // signifier substring like 'stitched-ad' which is present on every CSAI
+                // break poll). IsStrippingAdSegments is too loose — it's set whenever
+                // hasStrippedAdSegments is true, including via signifier matches, so it
+                // fires on every CSAI break poll and defeats the 2-poll threshold.
+                const numStrippedBefore = streamInfo.NumStrippedAdSegments || 0;
                 if (IsAdStrippingEnabled) {
                     textStr = stripAdSegments(textStr, false, streamInfo);
                 }
-                // Count polls where stripAdSegments saw actual ad segments, not just
-                // a transient single non-live segment (common on pure-CSAI breaks where
-                // Twitch serves older buffered frames on poll 2). The original single-poll
-                // trigger was flipping the sticky flag on ~100% of CSAI breaks, defeating
-                // the whole-break optimization. Require 2+ polls with strips before
-                // accepting this as real SSAI content. Uses IsStrippingAdSegments (set by
-                // stripAdSegments per-call) rather than NumStrippedAdSegments (cumulative
-                // with mid-break resets) for a cleaner per-poll signal.
-                if (streamInfo.IsStrippingAdSegments) {
+                // Count polls where an actual new EXTINF ad segment was stripped. A single
+                // transient blip (Twitch serving one older buffered non-live segment on
+                // poll 2 of a pure-CSAI break) increments the counter by 1; sustained SSAI
+                // content increments it further on subsequent polls. Require 2+ polls
+                // before accepting as real SSAI and clearing the sticky flag.
+                if ((streamInfo.NumStrippedAdSegments || 0) > numStrippedBefore) {
                     streamInfo.SawCSAIPollsWithStrips = (streamInfo.SawCSAIPollsWithStrips || 0) + 1;
                 }
                 if ((streamInfo.SawCSAIPollsWithStrips || 0) >= 2) {
