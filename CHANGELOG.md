@@ -1,6 +1,6 @@
 ## Unreleased
 
-## v59.0.0
+## v59.0.0 (2026-04-16)
 
 ### New Features
 - **Hide Twitch ad break / Turbo promo overlay** — detect and collapse ad break cards ("taking an ad break / stick around"), Turbo promo overlays, and stream display ads (SDA) during ad blocking. One-shot logging per overlay type to prevent console spam. Enabled via `localStorage.twitchAdSolutions_hideAdOverlay = 'true'` (vaft) (#68)
@@ -21,12 +21,12 @@
 ### Refactoring
 - **StreamInfo factory** — extract the inline StreamInfo object literal into a `createStreamInfo` factory function. All 41 fields (vaft) / 25 fields (video-swap-new) are now declared up-front with appropriate zero values, including 13 fields that were previously lazily assigned (vaft + video-swap-new) (#123)
 
-## v58.0.2
+## v58.0.2 (2026-04-13)
 
 ### Bug Fixes
 - **Revert PR #89 — always cycle backup player types** — PR #89 committed the first ad-laden backup immediately on the assumption that Twitch serves ads across all player types simultaneously. In practice Twitch stages ads across types, and the premature commit fed an ad-laden m3u8 into the strip+recovery path, starving the buffer and causing 2+ minute freezes (regression identified via user bisect of `afd498c`). Restored cycling as the default; ad-laden backups are only committed as a last resort after `playerTypeIndex >= playerTypesToTry.length - 1`, i.e. the full player-type list has been walked (vaft) (#116, fixes #112)
 
-## v58.0.1
+## v58.0.1 (2026-04-11)
 
 ### Bug Fixes
 - **Skip injection in nested frames** — Twitch's main channel page has 5+ hidden cross-origin iframes (auth, analytics, ad SDK, etc.) that uBO/Tampermonkey were injecting the script into, causing 4+ racing instances per page that fought for player control. Use `window.frameElement` (the canonical "am I in a nested iframe" check) to skip injection in nested frames, with an allow-list for the three documented Twitch embed contexts (`player.twitch.tv`, `embed.twitch.tv`, `/embed/...`) so third-party Twitch embeds still work (vaft + video-swap-new) (#109, #113)
@@ -42,7 +42,7 @@
 ### Diagnostic Logging
 - Log when frame check skips injection: `[AD DEBUG] vaft skipped — nested frame on <host><path>` — helps diagnose "no vaft logs" reports (vaft + video-swap-new)
 
-## v58.0.0
+## v58.0.0 (2026-04-09)
 
 ### New Features
 - **CSAI fast path** — when all m3u8 segments are live, skip backup stream search entirely. Eliminates the 20-40s rebuffer gap on pure-CSAI ad breaks (vaft + video-swap-new) (#90, #103)
@@ -77,7 +77,7 @@
 ### Configurable via localStorage (new in this release)
 - `twitchAdSolutions_earlyReloadPollThreshold` — number, default `5` (each poll ~2s, so 5 = ~10s before early reload fires); set `0` to disable
 
-## v57.0.0
+## v57.0.0 (2026-04-09)
 
 ### Player Stability
 - Skip buffer monitor and position jump drift during ad breaks — prevents unnecessary pause/play and 1.1x speedup when backup stream buffer is thin (vaft)
@@ -89,7 +89,7 @@
 - Log access token failure response body (first 200 chars) and integrity header status on 403 (all scripts)
 - Log Usher (m3u8 encodings) HTTP failures (all scripts)
 
-## v56.0.0
+## v56.0.0 (2026-04-09)
 
 ### Bug Fixes
 - Revert hasAdTags to Array.some() — the regex used shortened alternations that matched more broadly than the signifier array, causing false ad detections and empty signifier logs on subscribed channels (#82). Removes AdSignifierRegex entirely.
@@ -100,7 +100,7 @@
 ### Debug Logging
 - Log video element state (readyState, networkState, buffered, currentTime, paused) before buffer monitor fix attempts — helps diagnose iOS video issues and over-aggressive interventions (vaft)
 
-## v55.0.0
+## v55.0.0 (2026-04-08)
 
 ### Performance
 - Use regex for hasAdTags instead of Array.some() — 6.7x faster on clean playlists (vaft)
@@ -117,7 +117,7 @@
 - Warn on 3+ consecutive zero-strip ad breaks — early detection of false positive ad signifiers (vaft, video-swap-new)
 - Dedupe CSAI ad request logs to once per type per page load — reduces console spam from 40+ to 2 lines (all scripts)
 
-## v54.0.0
+## v54.0.0 (2026-04-08)
 
 ### Performance
 - Declare all object properties upfront in playerBufferState and streamInfo for V8 hidden class stability (vaft)
@@ -125,7 +125,7 @@
 ### Hardening (video-swap-new)
 - Port 14 features from vaft: parseAttributes null check, Object.create(null) dictionaries, 15s GQL timeout, stream info TTL cleanup, WASM worker JS cache, React fallback discovery, revokeObjectURL hook, version logging, worker rejection/intercept logging, GQL headers log, GQL response validation, fetch hook log, split(/\r?\n/) line parsing
 
-## v53.0.0
+## v53.0.0 (2026-04-08)
 
 ### Bug Fixes
 - Remove bare `maf-ad` from ad signifiers — over-matched Twitch MAF metadata in non-ad playlists, causing false ad detections every 2-3 minutes (#69). The specific `EXT-X-DATERANGE:CLASS="twitch-maf-ad"` remains for actual MAF ad breaks. Affects vaft and video-swap-new.
@@ -139,7 +139,7 @@
 - Log version on script load (`TwitchAdSolutions vaft v40 loading`)
 - Improve conflict detection message with `[AD DEBUG]` prefix and actionable guidance
 
-## v52.0.0
+## v52.0.0 (2026-04-08)
 
 ### CSAI Handling
 - Remove pause/play for CSAI-only ad breaks — stream was never interrupted, the unnecessary pause/play caused Twitch's player to seek back ~10s, repeat video, and trigger "video buffering" warnings
@@ -150,7 +150,7 @@
 - Guard against drift correction restart while already correcting — prevents perpetual 1.1x playback when repeated position jumps keep resetting the 30s safety timeout
 - Make revokeObjectURL hook idempotent — prevents stacking multiple wrappers if hookWindowWorker is called more than once
 
-## v51.0.0
+## v51.0.0 (2026-04-07)
 
 ### Hardening
 - Harden parseAttributes: null/empty guard + strip HLS tag prefix before parsing (fixes first key incorrectly prefixed with tag name)
@@ -178,7 +178,7 @@
 ### Ad Recovery
 - Respect reload cooldown when segments were stripped (was force-reloading regardless of cooldown)
 
-## v50.0.0
+## v50.0.0 (2026-04-06)
 
 ### CSAI Cascade Fix
 - Skip reload for CSAI-only ad breaks where 0 segments were stripped — eliminates the endless reload cascade on ad-heavy channels (no reload = no fresh token = Twitch can't insert another ad)
@@ -189,7 +189,7 @@
 - Add 10s backup switch grace period (buffer monitor waits for backup stream to stabilize before attempting fixes)
 - Only track actual reloads toward auto-escalation threshold (skipped reloads don't inflate count)
 
-## v49.0.0
+## v49.0.0 (2026-04-06)
 
 ### Bug Fixes
 - Invalidate cached player reference on reload — root cause fix for black screen after ad-end reloads (stale ref read 242s buffer at position 0, causing false stall detection on wrong player instance)
@@ -211,7 +211,7 @@
 - Remove 'React root node not found' log (timing artifact on page load, not actionable)
 - Add log when user pause intent is respected
 
-## v48.0.0
+## v48.0.0 (2026-04-06)
 
 ### Player Stability
 - Add one-reload-per-recovery cap to buffer monitor (prevents infinite reload loops during persistent stalls)
@@ -227,7 +227,7 @@
 - Add twitchAdSolutions_disableReloadCap localStorage option (revert to unlimited reloads)
 - Document twitchAdSolutions_pinBackupPlayerType quality caveat in README
 
-## v47.0.0
+## v47.0.0 (2026-04-05)
 
 ### Player Stability
 - Retry play() within 10s window after stuck pause/play cycle in buffer monitor (auto-recovers from player stuck paused after ad-state interference)
@@ -240,7 +240,7 @@
 - Dedupe 'Backup stream (X) also has ads' log to once per player type per ad break
 - Dedupe 'React root node / player not found' logs to once per page load (silences m.twitch.tv console spam)
 
-## v46.0.0
+## v46.0.0 (2026-04-05)
 
 ### Ad Detection
 - Add maf-ad ID signifier
@@ -254,7 +254,7 @@
 - Detect and log CSAI (client-side ad insertion) requests via fetch, XHR
 - Log ad tracking attribute names seen per stream (helps identify new beacon types)
 
-## v45.0.0
+## v45.0.0 (2026-04-03)
 
 ### Player Stability
 - Add live drift correction after player reload (seeks to live edge if >2s behind)
@@ -267,7 +267,7 @@
 - Add GitHub issue template for bug reports
 - Add unit tests (73 tests) with CI integration
 
-## v44.0.0
+## v44.0.0 (2026-04-03)
 
 ### Ad Detection
 - Add SCTE35-OUT signifier for alternative SCTE-35 marker detection
@@ -298,7 +298,7 @@
 ### Compatibility
 - Auto-resume video on tab return regardless of muted state
 
-## v42.0.0
+## v42.0.0 (2026-03-24)
 
 ### Ad Detection
 - Add SCTE-35 ad signifier detection and CUE-OUT/CUE-IN tracking
