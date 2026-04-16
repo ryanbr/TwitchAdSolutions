@@ -158,6 +158,14 @@ twitch-videoad.js text/javascript
     const twitchWorkers = [];
     let cachedRootNode = null;// Cached #root DOM element (never changes in React SPAs)
     let cachedPlayerRootDiv = null;// Cached .video-player element
+    // One-shot flags for overlay-hide logs. Twitch's React tree re-mounts SDA
+    // wrappers and ad-break cards constantly during an ad break, so the
+    // hide-and-log fires hundreds of times. Log the first occurrence of each
+    // hide type per page load, then stay silent — the hide itself still runs
+    // on every tick via dataset-based dedup.
+    let loggedPromoOverlayHide = false;
+    let loggedSdaHide = false;
+    let loggedAdBreakCardHide = false;
     // Strings used to detect and handle conflicting Twitch worker overrides (e.g. TwitchNoSub)
     const workerStringConflicts = [
         'twitch',
@@ -1494,10 +1502,74 @@ twitch-videoad.js text/javascript
                 }
             });
         }
+        // Catch persistent ad-break overlays (e.g. "taking an ad break / stick around")
+        // even after hasAds has transitioned to false. updateAdblockBanner only calls
+        // hideTwitchAdOverlays during the active ad break; some overlays have their own
+        // lifecycle and stay visible afterwards. Running here on every monitor tick
+        // (1-3s cadence) keeps them hidden without a dedicated interval.
+        try { hideTwitchAdOverlays(); } catch {}
         // Visibility-aware backoff: poll 3x slower when tab is hidden (but NOT during PiP — user is still watching)
         const shouldThrottle = typeof document !== 'undefined' && document.hidden && !document.pictureInPictureElement;
         const nextDelay = shouldThrottle ? PlayerBufferingDelay * 3 : PlayerBufferingDelay;
         setTimeout(monitorPlayerBuffering, nextDelay);
+    }
+    // Hide Twitch's ad break / Turbo promo / stream display ad overlays when we're already blocking ads
+    function hideTwitchAdOverlays() {
+        if (!cachedPlayerRootDiv || !cachedPlayerRootDiv.isConnected) return;
+        const promoLinks = cachedPlayerRootDiv.querySelectorAll(
+            'a[href*="/how-to-allow-ads-browser"], a[href="https://www.twitch.tv/turbo"]'
+        );
+        for (let i = 0; i < promoLinks.length; i++) {
+            const overlay = promoLinks[i].closest('.player-overlay-background');
+            if (overlay && !overlay.dataset.tasHidden) {
+                overlay.dataset.tasHidden = '';
+                overlay.style.setProperty('display', 'none', 'important');
+                if (!loggedPromoOverlayHide) {
+                    loggedPromoOverlayHide = true;
+                    console.log('[AD DEBUG] Hidden Twitch ad/Turbo promo overlay');
+                }
+            }
+        }
+        // Hide stream display ad (SDA) wrapper
+        const sdaElements = document.querySelectorAll('[data-test-selector="sda-wrapper"]');
+        for (let i = 0; i < sdaElements.length; i++) {
+            if (!sdaElements[i].dataset.tasHidden) {
+                sdaElements[i].dataset.tasHidden = '';
+                sdaElements[i].style.setProperty('display', 'none', 'important');
+                if (!loggedSdaHide) {
+                    loggedSdaHide = true;
+                    console.log('[AD DEBUG] Hidden Twitch stream display ad');
+                }
+            }
+        }
+        // Hide "taking an ad break" / "stick around to support the stream" card.
+        // This overlay has its own lifecycle independent of the player's ad state — when
+        // the CSAI fast path keeps the player on the main stream, Twitch's overlay
+        // controller never receives the "player exited ad state" signal, so the card
+        // persists after the break ends. Text-match approach: scan for the distinctive
+        // phrases inside the player root (avoids chat false positives), walk up to find
+        // the overlay container. Scoped to the player root to keep cost bounded.
+        const textNodes = cachedPlayerRootDiv.querySelectorAll('span, p, h1, h2, h3');
+        for (let i = 0; i < textNodes.length; i++) {
+            const el = textNodes[i];
+            const text = (el.textContent || '').toLowerCase();
+            if (text.length === 0 || text.length > 300) continue;
+            if (text.includes('taking an ad break') ||
+                text.includes('stick around to support the stream') ||
+                text.includes('stick around to support the channel') ||
+                text.includes('right after this ad break')) {
+                const overlay = el.closest('.player-overlay-background') || el.closest('[class*="overlay"]') || el.parentElement;
+                if (overlay && !overlay.dataset.tasAdBreakHidden) {
+                    overlay.dataset.tasAdBreakHidden = '';
+                    overlay.style.setProperty('display', 'none', 'important');
+                    if (!loggedAdBreakCardHide) {
+                        loggedAdBreakCardHide = true;
+                        console.log('[AD DEBUG] Hidden Twitch ad break card (taking an ad break / stick around)');
+                    }
+                    break;// One card per tick is enough; don't over-scan
+                }
+            }
+        }
     }
     function updateAdblockBanner(data) {
         if (!cachedPlayerRootDiv || !cachedPlayerRootDiv.isConnected) {
@@ -1519,6 +1591,9 @@ twitch-videoad.js text/javascript
                 isActivelyStrippingAds = data.isStrippingAdSegments;
                 adBlockDiv.P.textContent = 'Blocking' + (data.isMidroll ? ' midroll' : '') + ' ads' + (data.isStrippingAdSegments ? ' (stripping)' : '') + (data.activeBackupPlayerType ? ' (' + data.activeBackupPlayerType + ')' : '');
                 adBlockDiv.style.display = data.hasAds && playerBufferState.isLive ? 'block' : 'none';
+            }
+            if (data.hasAds) {
+                hideTwitchAdOverlays();
             }
         }
     }
