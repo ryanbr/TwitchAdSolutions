@@ -722,7 +722,13 @@ twitch-videoad.js text/javascript
         let closestResolutionUrl = null;
         let closestResolutionDifference = Infinity;
         for (let i = 0; i < encodingsLines.length - 1; i++) {
-            if (encodingsLines[i].startsWith('#EXT-X-STREAM-INF') && encodingsLines[i + 1].includes('.m3u8')) {
+            // Accept v2 API variant URLs which are raw CDN URLs without '.m3u8' in the path.
+            // v1 API: next line is '...index-<resolution>.m3u8?...'
+            // v2 API: next line is a raw CDN URL like 'https://video-edge-...net/v1/.../chunked/...'
+            // without '.m3u8'. Matching only on '.m3u8' would skip v2 variants entirely,
+            // causing getStreamUrlForResolution to return null and backup selection to fail.
+            const nextLine = encodingsLines[i + 1]?.trim();
+            if (encodingsLines[i].startsWith('#EXT-X-STREAM-INF') && nextLine && !nextLine.startsWith('#') && (nextLine.includes('.m3u8') || nextLine.includes('://'))) {
                 const attributes = parseAttributes(encodingsLines[i]);
                 const resolution = attributes['RESOLUTION'];
                 const frameRate = attributes['FRAME-RATE'];
