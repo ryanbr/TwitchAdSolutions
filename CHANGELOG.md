@@ -1,5 +1,26 @@
 ## Unreleased
 
+## v59.0.0
+
+### New Features
+- **Hide Twitch ad break / Turbo promo overlay** — detect and collapse ad break cards ("taking an ad break / stick around"), Turbo promo overlays, and stream display ads (SDA) during ad blocking. One-shot logging per overlay type to prevent console spam. Enabled via `localStorage.twitchAdSolutions_hideAdOverlay = 'true'` (vaft) (#68)
+- **Latency-aware post-ad reload** — the health check that skips unnecessary reloads now measures `seekable.end - currentTime`. If the player is >7s behind live edge after an ad strip, proceed with reload to reset latency instead of leaving the viewer desynchronized. Guards against garbage `seekable` values (2^30 sentinel, NaN, Infinity) by treating unknown latency as "proceed with reload" (vaft) (#128, fixes #127)
+- **Cache clean native m3u8 for all-stripped recovery** — snapshot the last clean playlist during non-ad polls (mirrors TTV-AB `LastCleanNativeM3U8`). When all segments are stripped, prefer the full-playlist snapshot over the thin per-segment recovery cache for richer recovery content (vaft + video-swap-new) (#125)
+- **Sticky CSAI fast path** — once a break enters the CSAI fast path (all segments live), stay on it for the entire break. Adds early-reload trigger from within the sticky path when recovery cache is thin. Includes stale backup commit guard to prevent a cache-stale backup from being committed after a channel switch (vaft) (#124)
+
+### Performance
+- **Hoist stripAdSegments regexes** — move per-line regex compilation out of the hot loop. Regexes are now compiled once per `stripAdSegments` call instead of once per line (vaft + video-swap-new) (#122)
+- **Throttle AdSegmentCache prune** — limit cache pruning to once per 60s instead of every `processM3U8` call. Add diagnostic log for cache size at prune time (vaft + video-swap-new) (#121)
+
+### Bug Fixes
+- **Accept v2 API variant URLs without `.m3u8` extension** — Twitch's v2 API returns raw CDN variant URLs that don't contain `.m3u8`, causing stream info sync and resolution lookup to skip them. Accept absolute URLs (containing `://`) alongside `.m3u8` URLs in all variant URL detection paths (vaft + video-swap-new) (#118)
+- **Strip LL-HLS prefetch hints on first poll of ad break** — prefetch hints (`#EXT-X-TWITCH-PREFETCH`, `#EXT-X-PRELOAD-HINT`) were only stripped after the first ad-tagged poll. Now strip on the first poll where `hasAdTags` is true, preventing the player from pre-fetching ad content before the extension can block it (vaft + video-swap-new) (#119)
+- **Drop bare `'stitched'` from ad signifier list** — bare `'stitched'` matched non-ad content (e.g. CDN hostnames containing "stitched"). Narrowed to `'stitched-ad'` only (vaft + video-swap-new) (#120)
+- **Debounce "Player not found" warnings** — suppress `getPlayerAndState` warnings for the first 10s after page load to avoid false-positive console noise during normal player initialization (vaft) (#126)
+
+### Refactoring
+- **StreamInfo factory** — extract the inline StreamInfo object literal into a `createStreamInfo` factory function. All 41 fields (vaft) / 25 fields (video-swap-new) are now declared up-front with appropriate zero values, including 13 fields that were previously lazily assigned (vaft + video-swap-new) (#123)
+
 ## v58.0.2
 
 ### Bug Fixes
