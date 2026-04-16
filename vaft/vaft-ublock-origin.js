@@ -96,6 +96,51 @@ twitch-videoad.js text/javascript
             }
         }
     }
+    function createStreamInfo(channelName, encodingsM3u8, usherParams) {
+        return {
+            ChannelName: channelName,
+            LastSeenAt: Date.now(),
+            EncodingsM3U8: encodingsM3u8,
+            UsherParams: usherParams,
+            Urls: Object.create(null),
+            ResolutionList: [],
+            RequestedAds: new Set(),
+            ModifiedM3U8: null,
+            IsUsingModifiedM3U8: false,
+            IsShowingAd: false,
+            IsMidroll: false,
+            AdBreakStartedAt: 0,
+            PodLength: 1,
+            HasConfirmedAdAttrs: false,
+            CleanPlaylistCount: 0,
+            ConsecutiveZeroStripBreaks: 0,
+            CsaiOnlyThisBreak: false,
+            IsStrippingAdSegments: false,
+            NumStrippedAdSegments: 0,
+            RecoverySegments: [],
+            RecoveryStartSeq: undefined,
+            FreezeStartedAt: 0,
+            ConsecutiveAllStrippedPolls: 0,
+            TotalAllStrippedPolls: 0,
+            LastCleanNativeM3U8: null,
+            LastCleanNativePlaylistAt: 0,
+            BackupEncodingsM3U8Cache: [],
+            ActiveBackupPlayerType: null,
+            PinnedBackupPlayerType: null,
+            LastCommittedBackupPlayerType: null,
+            FailedBackupPlayerTypes: new Map(),
+            LoggedBackupAdsByType: null,
+            CycleRescuedThisBreak: false,
+            EarlyReloadCount: 0,
+            EarlyReloadAtPoll: 0,
+            EarlyReloadTriggered: false,
+            EarlyReloadAwaitingResult: false,
+            LastPlayerReload: 0,
+            ReloadTimestamps: [],
+            HasCheckedUnknownTags: false,
+            HasLoggedAdAttributes: false,
+        };
+    }
     function maskAsNative(fn, name) {
         fn.toString = () => 'function ' + name + '() { [native code] }';
         return fn;
@@ -216,6 +261,7 @@ twitch-videoad.js text/javascript
                     ${getServerTimeFromM3u8.toString()}
                     ${replaceServerTimeInM3u8.toString()}
                     ${pruneStreamInfos.toString()}
+                    ${createStreamInfo.toString()}
                     const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
                     declareOptions(self);
                     if (!self.__tasPruneInterval) {
@@ -396,36 +442,7 @@ twitch-videoad.js text/javascript
                                     // cooldown calculation, blocking legitimate end-of-break reloads.
                                     HasTriggeredPlayerReload = false;
                                     console.log('[AD DEBUG] New stream session — channel: ' + channelName + ', API: ' + (V2API ? 'v2' : 'v1'));
-                                    StreamInfos[channelName] = streamInfo = {
-                                        ChannelName: channelName,
-                                        LastSeenAt: Date.now(),
-                                        IsShowingAd: false,
-                                        LastPlayerReload: 0,
-                                        EncodingsM3U8: encodingsM3u8,
-                                        ModifiedM3U8: null,
-                                        IsUsingModifiedM3U8: false,
-                                        UsherParams: parsedUrl.search,
-                                        RequestedAds: new Set(),
-                                        Urls: Object.create(null),// xxx.m3u8 -> { Resolution: "284x160", FrameRate: 30.0 }
-                                        ResolutionList: [],
-                                        BackupEncodingsM3U8Cache: [],
-                                        ActiveBackupPlayerType: null,
-                                        PinnedBackupPlayerType: null,
-                                        HasCheckedUnknownTags: false,
-                                        IsMidroll: false,
-                                        IsStrippingAdSegments: false,
-                                        NumStrippedAdSegments: 0,
-                                        RecoverySegments: [],
-                                        FailedBackupPlayerTypes: new Map(),// Map<playerType, timestamp> — failures expire after 15s for retry
-                                        HasLoggedAdAttributes: false,
-                                        LoggedBackupAdsByType: null,
-                                        RecoveryStartSeq: undefined,
-                                        CleanPlaylistCount: 0,
-                                        ReloadTimestamps: [],
-                                        ConsecutiveZeroStripBreaks: 0,
-                                        LastCleanNativeM3U8: null,// Full-playlist snapshot cached during non-ad polls for all-stripped recovery (mirrors TTV-AB LastCleanNativeM3U8)
-                                        LastCleanNativePlaylistAt: 0
-                                    };
+                                    StreamInfos[channelName] = streamInfo = createStreamInfo(channelName, encodingsM3u8, parsedUrl.search);
                                     const lines = encodingsM3u8.split(/\r?\n/);
                                     for (let i = 0; i < lines.length - 1; i++) {
                                         if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {

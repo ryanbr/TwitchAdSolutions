@@ -55,6 +55,34 @@ twitch-videoad.js text/javascript
         scope.PinBackupPlayerType = false;// If true, remember which backup player type worked and try it first on next ad break
         scope.StreamInfoMaxAgeMs = 30 * 60 * 1000;
     }
+    function createStreamInfo(channelName, usherParams) {
+        return {
+            ChannelName: channelName,
+            LastSeenAt: Date.now(),
+            UsherParams: usherParams,
+            Urls: new Map(),
+            RequestedAds: new Set(),
+            Encodings: null,
+            BackupEncodings: null,
+            BackupEncodingsStatus: new Map(),
+            BackupEncodingsPlayerTypeIndex: -1,
+            PinnedBackupPlayerType: null,
+            HasCheckedUnknownTags: false,
+            HasConfirmedAdAttrs: false,
+            HasLoggedAdAttributes: false,
+            IsMovingOffBackupEncodings: false,
+            IsMidroll: false,
+            IsStrippingAdSegments: false,
+            NumStrippedAdSegments: 0,
+            RecoverySegments: [],
+            RecoveryStartSeq: undefined,
+            CleanPlaylistCount: 0,
+            ConsecutiveZeroStripBreaks: 0,
+            UseFallbackStream: false,
+            LastCleanNativeM3U8: null,
+            LastCleanNativePlaylistAt: 0,
+        };
+    }
     function maskAsNative(fn, name) {
         fn.toString = () => 'function ' + name + '() { [native code] }';
         return fn;
@@ -187,6 +215,7 @@ twitch-videoad.js text/javascript
                     ${getStreamUrlForResolution.toString()}
                     ${updateAdblockBannerForStream.toString()}
                     ${pruneStreamInfos.toString()}
+                    ${createStreamInfo.toString()}
                     const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
                     declareOptions(self);
                     if (!self.__tasPruneInterval) {
@@ -736,29 +765,7 @@ twitch-videoad.js text/javascript
                         }
                         let serverTime = null;
                         if (streamInfo == null || streamInfo.Encodings == null) {
-                            StreamInfos[channelName] = streamInfo = {
-                                LastSeenAt: Date.now(),
-                                RequestedAds: new Set(),
-                                Encodings: null,
-                                BackupEncodings: null,
-                                BackupEncodingsStatus: new Map(),
-                                BackupEncodingsPlayerTypeIndex: -1,
-                                PinnedBackupPlayerType: null,
-                                HasCheckedUnknownTags: false,
-                                IsMovingOffBackupEncodings: false,
-                                IsMidroll: false,
-                                IsStrippingAdSegments: false,
-                                NumStrippedAdSegments: 0,
-                                RecoverySegments: [],
-                                CleanPlaylistCount: 0,
-                                ConsecutiveZeroStripBreaks: 0,
-                                UseFallbackStream: false,
-                                ChannelName: channelName,
-                                UsherParams: (new URL(url)).search,
-                                Urls: new Map(),
-                                LastCleanNativeM3U8: null,// Full-playlist snapshot for all-stripped recovery (mirrors TTV-AB)
-                                LastCleanNativePlaylistAt: 0,
-                            };
+                            StreamInfos[channelName] = streamInfo = createStreamInfo(channelName, (new URL(url)).search);
                             const encodingsM3u8Response = await realFetch(url, options);
                             if (encodingsM3u8Response != null && encodingsM3u8Response.status === 200) {
                                 const encodingsM3u8 = await encodingsM3u8Response.text();

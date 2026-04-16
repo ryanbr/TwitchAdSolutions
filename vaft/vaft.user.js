@@ -106,6 +106,64 @@
             }
         }
     }
+    // Creates a new StreamInfo with the full field shape declared up-front.
+    // When adding a new streamInfo field, declare it here with an appropriate
+    // zero value so the complete shape is visible in one place.
+    function createStreamInfo(channelName, encodingsM3u8, usherParams) {
+        return {
+            // Identity / lifecycle
+            ChannelName: channelName,
+            LastSeenAt: Date.now(),
+            EncodingsM3U8: encodingsM3u8,
+            UsherParams: usherParams,
+            // Resolutions / URL map
+            Urls: Object.create(null),// xxx.m3u8 -> { Resolution: "284x160", FrameRate: 30.0 }
+            ResolutionList: [],
+            RequestedAds: new Set(),
+            // Modified m3u8 state
+            ModifiedM3U8: null,
+            IsUsingModifiedM3U8: false,
+            // Ad-break state
+            IsShowingAd: false,
+            IsMidroll: false,
+            AdBreakStartedAt: 0,
+            PodLength: 1,
+            HasConfirmedAdAttrs: false,
+            CleanPlaylistCount: 0,
+            ConsecutiveZeroStripBreaks: 0,
+            CsaiOnlyThisBreak: false,
+            // Strip state
+            IsStrippingAdSegments: false,
+            NumStrippedAdSegments: 0,
+            RecoverySegments: [],
+            RecoveryStartSeq: undefined,// LOAD-BEARING: explicitly checked with `!== undefined`
+            FreezeStartedAt: 0,
+            ConsecutiveAllStrippedPolls: 0,
+            TotalAllStrippedPolls: 0,
+            // Clean playlist snapshot for all-stripped recovery (mirrors TTV-AB)
+            LastCleanNativeM3U8: null,
+            LastCleanNativePlaylistAt: 0,
+            // Backup player type cycling
+            BackupEncodingsM3U8Cache: [],
+            ActiveBackupPlayerType: null,
+            PinnedBackupPlayerType: null,
+            LastCommittedBackupPlayerType: null,
+            FailedBackupPlayerTypes: new Map(),// Map<playerType, timestamp> — failures expire after 15s for retry
+            LoggedBackupAdsByType: null,// lazy-init to Set on first "backup has ads" log
+            CycleRescuedThisBreak: false,
+            // Early reload
+            EarlyReloadCount: 0,
+            EarlyReloadAtPoll: 0,
+            EarlyReloadTriggered: false,
+            EarlyReloadAwaitingResult: false,
+            // Reload cooldown
+            LastPlayerReload: 0,
+            ReloadTimestamps: [],
+            // Diagnostic flags (once-per-session)
+            HasCheckedUnknownTags: false,
+            HasLoggedAdAttributes: false,
+        };
+    }
     function maskAsNative(fn, name) {
         fn.toString = () => 'function ' + name + '() { [native code] }';
         return fn;
@@ -226,6 +284,7 @@
                     ${getServerTimeFromM3u8.toString()}
                     ${replaceServerTimeInM3u8.toString()}
                     ${pruneStreamInfos.toString()}
+                    ${createStreamInfo.toString()}
                     const workerString = getWasmWorkerJs('${twitchBlobUrl.replaceAll("'", "%27")}');
                     declareOptions(self);
                     if (!self.__tasPruneInterval) {
@@ -406,36 +465,7 @@
                                     // cooldown calculation, blocking legitimate end-of-break reloads.
                                     HasTriggeredPlayerReload = false;
                                     console.log('[AD DEBUG] New stream session — channel: ' + channelName + ', API: ' + (V2API ? 'v2' : 'v1'));
-                                    StreamInfos[channelName] = streamInfo = {
-                                        ChannelName: channelName,
-                                        LastSeenAt: Date.now(),
-                                        IsShowingAd: false,
-                                        LastPlayerReload: 0,
-                                        EncodingsM3U8: encodingsM3u8,
-                                        ModifiedM3U8: null,
-                                        IsUsingModifiedM3U8: false,
-                                        UsherParams: parsedUrl.search,
-                                        RequestedAds: new Set(),
-                                        Urls: Object.create(null),// xxx.m3u8 -> { Resolution: "284x160", FrameRate: 30.0 }
-                                        ResolutionList: [],
-                                        BackupEncodingsM3U8Cache: [],
-                                        ActiveBackupPlayerType: null,
-                                        PinnedBackupPlayerType: null,
-                                        HasCheckedUnknownTags: false,
-                                        IsMidroll: false,
-                                        IsStrippingAdSegments: false,
-                                        NumStrippedAdSegments: 0,
-                                        RecoverySegments: [],
-                                        FailedBackupPlayerTypes: new Map(),// Map<playerType, timestamp> — failures expire after 15s for retry
-                                        HasLoggedAdAttributes: false,
-                                        LoggedBackupAdsByType: null,
-                                        RecoveryStartSeq: undefined,
-                                        CleanPlaylistCount: 0,
-                                        ReloadTimestamps: [],
-                                        ConsecutiveZeroStripBreaks: 0,
-                                        LastCleanNativeM3U8: null,// Full-playlist snapshot cached during non-ad polls for all-stripped recovery (mirrors TTV-AB LastCleanNativeM3U8)
-                                        LastCleanNativePlaylistAt: 0
-                                    };
+                                    StreamInfos[channelName] = streamInfo = createStreamInfo(channelName, encodingsM3u8, parsedUrl.search);
                                     const lines = encodingsM3u8.split(/\r?\n/);
                                     for (let i = 0; i < lines.length - 1; i++) {
                                         if (lines[i].startsWith('#EXT-X-STREAM-INF') && lines[i + 1].includes('.m3u8')) {
