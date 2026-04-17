@@ -731,6 +731,7 @@
                             }
                             streamInfo.HasConfirmedAdAttrs = false;
                             streamInfo.HasLoggedCsaiFastPath = false;
+                            streamInfo.HasLoggedAdAttributes = false;
                             streamInfo.ConsecutiveAllStrippedPolls = 0;
                             streamInfo.EarlyReloadTriggered = false;
                             streamInfo.IsMovingOffBackupEncodings = true;
