@@ -865,6 +865,11 @@ twitch-videoad.js text/javascript
                 // break duration (observed: 35.9s freeze on pod-1 break, 3 all-stripped
                 // polls, 1-segment recovery cache).
                 // Bounded to maxEarlyReloads per ad in pod so reload loops are impossible.
+                if (streamInfo.EarlyReloadAwaitingResult) {
+                    streamInfo.EarlyReloadAwaitingResult = false;
+                    console.log('[AD DEBUG] Early reload result (sticky path): still ads — continuing recovery loop');
+                    streamInfo.EarlyReloadTriggered = false;
+                }
                 const stickyRecoveryThin = (streamInfo.RecoverySegments?.length || 0) < 3;
                 const stickyMaxEarlyReloads = stickyRecoveryThin ? Math.max(2, streamInfo.PodLength || 1) : Math.max(1, streamInfo.PodLength || 1);
                 const stickyEffectiveThreshold = stickyRecoveryThin ? 1 : EarlyReloadPollThreshold;
@@ -1088,14 +1093,13 @@ twitch-videoad.js text/javascript
                     streamInfo.EarlyReloadTriggered = false;
                 } else {
                     console.log('[AD DEBUG] Early reload result: still ads — continuing recovery loop');
-                    streamInfo.EarlyReloadTriggered = false;
                 }
             }
             // Early reload during prolonged freeze: if we've been looping recovery segments
             // for N+ polls (~Nx2s), trigger a reload to attempt fresh content. Bounded to one
             // reload per ad in the pod (e.g. 2-ad pod = up to 2 early reloads).
+            const maxEarlyReloads = Math.max(1, streamInfo.PodLength || 1);
             const recoveryThin = (streamInfo.RecoverySegments?.length || 0) < 3;
-            const maxEarlyReloads = recoveryThin ? Math.max(2, streamInfo.PodLength || 1) : Math.max(1, streamInfo.PodLength || 1);
             const effectiveThreshold = recoveryThin ? 1 : EarlyReloadPollThreshold;
             if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= effectiveThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < maxEarlyReloads) {
                 streamInfo.EarlyReloadTriggered = true;
