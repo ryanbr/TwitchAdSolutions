@@ -826,7 +826,8 @@
                         realFetch(url, options).then(function(response) {
                             processAfter(response);
                         })['catch'](function(err) {
-                            if (err?.name !== 'AbortError') console.log('fetch hook err ' + err);
+                            const errMsg = String(err?.message || err);
+                            if (err?.name !== 'AbortError' && !/cancel|abort/i.test(errMsg)) console.log('fetch hook err ' + err);
                             reject(err);
                         });
                     });
