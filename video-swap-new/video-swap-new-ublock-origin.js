@@ -33,7 +33,7 @@ twitch-videoad.js text/javascript
     window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
     function declareOptions(scope) {
         // Options / globals
-        scope.OPT_BACKUP_PLAYER_TYPES = [ 'autoplay', 'picture-by-picture', /*'autoplay-ALT',*/ 'embed', 'mobile_web' ];
+        scope.OPT_BACKUP_PLAYER_TYPES = [ 'embed', 'popout', 'mobile_web' ];
         scope.OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE = 'popout';
         scope.AD_SIGNIFIERS = ['stitched-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'EXT-X-DATERANGE:CLASS="twitch-stream-source"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-ad-quartile"', 'SCTE35-OUT'];
         scope.AD_SEGMENT_URL_PATTERNS = ['/adsquared/', '/_404/', '/processing'];
@@ -906,7 +906,7 @@ twitch-videoad.js text/javascript
                 isVod: false,
                 vodID: "",
                 playerType: realPlayerType,
-                platform: realPlayerType == 'autoplay' ? 'android' : 'web'
+                platform: 'web'
             },
             extensions: {
                 persistedQuery: {
