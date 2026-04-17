@@ -1,5 +1,12 @@
 ## Unreleased
 
+## v59.1.0 (2026-04-17)
+
+### Bug Fixes
+- **Fire early reload immediately when recovery cache is thin** — when fewer than 3 recovery segments are cached (common on prerolls), lower the early reload threshold from 5 polls (~10s) to 1 poll (~2s). With only 1 recovery segment the player loops decode errors; reloading immediately saves ~8s of freeze time. Applied to both sticky CSAI and normal backup-search paths (vaft) (#130)
+- **Restart drift correction on re-entry** — `startDriftCorrection` now clears stale interval/timeout when called while already running instead of silently returning. Fixes cases where a second drift trigger (e.g. position jump during post-reload drift) was ignored, leaving the player at 1.1x with a partially elapsed safety timeout (vaft) (#131)
+- **Guard pause intent reset** — only reset `weJustPaused` tracking when the player wasn't already paused. Prevents the play() retry from firing against user intent when the user pauses during a stall recovery window (vaft) (#131)
+
 ## v59.0.0 (2026-04-16)
 
 ### New Features
