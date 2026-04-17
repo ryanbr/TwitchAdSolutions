@@ -163,7 +163,6 @@ twitch-videoad.js text/javascript
     // hide-and-log fires hundreds of times. Log the first occurrence of each
     // hide type per page load, then stay silent — the hide itself still runs
     // on every tick via dataset-based dedup.
-    let loggedPromoOverlayHide = false;
     let loggedSdaHide = false;
     // Strings used to detect and handle conflicting Twitch worker overrides (e.g. TwitchNoSub)
     const workerStringConflicts = [
@@ -1523,20 +1522,6 @@ twitch-videoad.js text/javascript
     // Hide Twitch's ad break / Turbo promo / stream display ad overlays when we're already blocking ads
     function hideTwitchAdOverlays() {
         if (!cachedPlayerRootDiv || !cachedPlayerRootDiv.isConnected) return;
-        const promoLinks = cachedPlayerRootDiv.querySelectorAll(
-            'a[href*="/how-to-allow-ads-browser"], a[href="https://www.twitch.tv/turbo"]'
-        );
-        for (let i = 0; i < promoLinks.length; i++) {
-            const overlay = promoLinks[i].closest('.player-overlay-background');
-            if (overlay && !overlay.dataset.tasHidden) {
-                overlay.dataset.tasHidden = '';
-                overlay.style.setProperty('display', 'none', 'important');
-                if (!loggedPromoOverlayHide) {
-                    loggedPromoOverlayHide = true;
-                    console.log('[AD DEBUG] Hidden Twitch ad/Turbo promo overlay');
-                }
-            }
-        }
         // Hide stream display ad (SDA) wrapper
         const sdaElements = document.querySelectorAll('[data-test-selector="sda-wrapper"]');
         for (let i = 0; i < sdaElements.length; i++) {
