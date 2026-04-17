@@ -1148,6 +1148,7 @@ twitch-videoad.js text/javascript
                 streamInfo.EarlyReloadAtPoll = 0;
                 streamInfo.TotalAllStrippedPolls = 0;
                 streamInfo.CsaiOnlyThisBreak = false;
+                streamInfo.HasLoggedAdAttributes = false;
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
