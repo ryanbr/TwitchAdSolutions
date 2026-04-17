@@ -828,7 +828,7 @@ twitch-videoad.js text/javascript
                             // Only request one .ts file per .m3u8 request to avoid making too many requests
                             //console.log('Fetch ad .ts file');
                             streamInfo.RequestedAds.add(lines[i + 1]);
-                            fetch(lines[i + 1]).then((response)=>{response.blob()}).catch(()=>{});
+                            fetch(lines[i + 1]).then((response) => response.blob()).catch(() => {});
                             break;
                         }
                     }
