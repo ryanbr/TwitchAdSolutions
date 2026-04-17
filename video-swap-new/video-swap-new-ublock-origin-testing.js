@@ -654,6 +654,7 @@ twitch-videoad.js text/javascript
                             streamInfo.BackupEncodingsStatus.clear();
                             streamInfo.BackupEncodingsPlayerTypeIndex = -1;
                             streamInfo.CleanPlaylistCount = 0;
+                            streamInfo.RequestedAds.clear();
                             postMessage({key: ReloadPlayerAfterAd ? 'UboReloadPlayer' : 'UboPauseResumePlayer'});
                         }
                     } else {
