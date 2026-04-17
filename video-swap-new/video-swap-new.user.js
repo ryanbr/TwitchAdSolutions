@@ -823,7 +823,7 @@
                         realFetch(url, options).then(function(response) {
                             processAfter(response);
                         })['catch'](function(err) {
-                            console.log('fetch hook err ' + err);
+                            if (err?.name !== 'AbortError') console.log('fetch hook err ' + err);
                             reject(err);
                         });
                     });
