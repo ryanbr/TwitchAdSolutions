@@ -1777,7 +1777,10 @@
             playerBufferState.loggedPauseIntent = false;
             // playerForMonitoringBuffering re-acquired fresh every tick — no manual invalidation needed
             console.log('Reloading Twitch player');
-            playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
+            // Soft reload: keep the player instance alive and reuse the cached access token.
+            // Smoother transition than the hard reload (no ~1-3s black screen during teardown).
+            // Ported from TTV-AB's post-ad reload pattern (v6.3.9 / v6.4.3).
+            playerState.setSrc({ isNewMediaPlayerInstance: false, refreshAccessToken: false });
             postTwitchWorkerMessage('TriggeredPlayerReload');
             // Resume playback with retry — only if user hadn't manually paused
             if (!wasPaused) {
