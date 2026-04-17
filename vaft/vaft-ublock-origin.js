@@ -165,7 +165,6 @@ twitch-videoad.js text/javascript
     // on every tick via dataset-based dedup.
     let loggedPromoOverlayHide = false;
     let loggedSdaHide = false;
-    let loggedAdBreakCardHide = false;
     // Strings used to detect and handle conflicting Twitch worker overrides (e.g. TwitchNoSub)
     const workerStringConflicts = [
         'twitch',
@@ -1546,34 +1545,6 @@ twitch-videoad.js text/javascript
                 if (!loggedSdaHide) {
                     loggedSdaHide = true;
                     console.log('[AD DEBUG] Hidden Twitch stream display ad');
-                }
-            }
-        }
-        // Hide "taking an ad break" / "stick around to support the stream" card.
-        // This overlay has its own lifecycle independent of the player's ad state — when
-        // the CSAI fast path keeps the player on the main stream, Twitch's overlay
-        // controller never receives the "player exited ad state" signal, so the card
-        // persists after the break ends. Text-match approach: scan for the distinctive
-        // phrases inside the player root (avoids chat false positives), walk up to find
-        // the overlay container. Scoped to the player root to keep cost bounded.
-        const textNodes = cachedPlayerRootDiv.querySelectorAll('span, p, h1, h2, h3');
-        for (let i = 0; i < textNodes.length; i++) {
-            const el = textNodes[i];
-            const text = (el.textContent || '').toLowerCase();
-            if (text.length === 0 || text.length > 300) continue;
-            if (text.includes('taking an ad break') ||
-                text.includes('stick around to support the stream') ||
-                text.includes('stick around to support the channel') ||
-                text.includes('right after this ad break')) {
-                const overlay = el.closest('.player-overlay-background') || el.closest('[class*="overlay"]') || el.parentElement;
-                if (overlay && !overlay.dataset.tasAdBreakHidden) {
-                    overlay.dataset.tasAdBreakHidden = '';
-                    overlay.style.setProperty('display', 'none', 'important');
-                    if (!loggedAdBreakCardHide) {
-                        loggedAdBreakCardHide = true;
-                        console.log('[AD DEBUG] Hidden Twitch ad break card (taking an ad break / stick around)');
-                    }
-                    break;// One card per tick is enough; don't over-scan
                 }
             }
         }
