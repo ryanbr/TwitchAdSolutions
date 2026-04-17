@@ -868,12 +868,15 @@ twitch-videoad.js text/javascript
                 // polls, 1-segment recovery cache).
                 // Bounded to maxEarlyReloads per ad in pod so reload loops are impossible.
                 const stickyMaxEarlyReloads = Math.max(1, streamInfo.PodLength || 1);
-                if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= EarlyReloadPollThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < stickyMaxEarlyReloads) {
+                const stickyRecoveryThin = (streamInfo.RecoverySegments?.length || 0) < 3;
+                const stickyEffectiveThreshold = stickyRecoveryThin ? 1 : EarlyReloadPollThreshold;
+                if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= stickyEffectiveThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < stickyMaxEarlyReloads) {
                     streamInfo.EarlyReloadTriggered = true;
                     streamInfo.EarlyReloadAwaitingResult = true;
                     streamInfo.EarlyReloadCount = (streamInfo.EarlyReloadCount || 0) + 1;
                     streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
-                    console.log('[AD DEBUG] Early reload triggered (sticky path) — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls (~' + (streamInfo.ConsecutiveAllStrippedPolls * 2) + 's freeze) [' + streamInfo.EarlyReloadCount + '/' + stickyMaxEarlyReloads + ']');
+                    const stickyReason = stickyRecoveryThin ? ' (thin recovery cache: ' + (streamInfo.RecoverySegments?.length || 0) + ' segments)' : '';
+                    console.log('[AD DEBUG] Early reload triggered (sticky path) — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls' + stickyReason + ' [' + streamInfo.EarlyReloadCount + '/' + stickyMaxEarlyReloads + ']');
                     postMessage({ key: 'ReloadPlayer' });
                 }
                 postMessage({
@@ -1093,12 +1096,15 @@ twitch-videoad.js text/javascript
             // for N+ polls (~Nx2s), trigger a reload to attempt fresh content. Bounded to one
             // reload per ad in the pod (e.g. 2-ad pod = up to 2 early reloads).
             const maxEarlyReloads = Math.max(1, streamInfo.PodLength || 1);
-            if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= EarlyReloadPollThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < maxEarlyReloads) {
+            const recoveryThin = (streamInfo.RecoverySegments?.length || 0) < 3;
+            const effectiveThreshold = recoveryThin ? 1 : EarlyReloadPollThreshold;
+            if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= effectiveThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < maxEarlyReloads) {
                 streamInfo.EarlyReloadTriggered = true;
                 streamInfo.EarlyReloadAwaitingResult = true;
                 streamInfo.EarlyReloadCount = (streamInfo.EarlyReloadCount || 0) + 1;
                 streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
-                console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls (~' + (streamInfo.ConsecutiveAllStrippedPolls * 2) + 's freeze) [' + streamInfo.EarlyReloadCount + '/' + maxEarlyReloads + ']');
+                const reason = recoveryThin ? ' (thin recovery cache: ' + (streamInfo.RecoverySegments?.length || 0) + ' segments)' : '';
+                console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls' + reason + ' [' + streamInfo.EarlyReloadCount + '/' + maxEarlyReloads + ']');
                 postMessage({ key: 'ReloadPlayer' });
             }
         } else if (streamInfo.IsShowingAd) {
