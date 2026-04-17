@@ -1284,7 +1284,8 @@ twitch-videoad.js text/javascript
     let driftCatchUpTimeout = null;
     function startDriftCorrection(videoElement) {
         if (DriftCorrectionRate <= 1) return;
-        if (driftCatchUpInterval) return; // already correcting — let it finish or timeout
+        if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
+        if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
         videoElement.playbackRate = DriftCorrectionRate;
         console.log('[AD DEBUG] Drift correction: catching up at ' + DriftCorrectionRate + 'x');
         driftCatchUpInterval = setInterval(() => {
@@ -1696,7 +1697,8 @@ twitch-videoad.js text/javascript
             console.log('Could not find player state');
             return;
         }
-        if (player.isPaused() || player.core?.paused) {
+        const wasPaused = player.isPaused() || player.core?.paused;
+        if (wasPaused) {
             // User deliberately paused — respect their intent, don't auto-resume
             if (playerBufferState.userPauseIntent) {
                 if (!playerBufferState.loggedPauseIntent) {
@@ -1711,7 +1713,9 @@ twitch-videoad.js text/javascript
             }
             return;
         }
-        playerBufferState.weJustPaused = 0;
+        if (!wasPaused) {
+            playerBufferState.weJustPaused = 0;
+        }
         playerBufferState.lastFixTime = Date.now();
         playerBufferState.numSame = 0;
         if (isPausePlay) {
