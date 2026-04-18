@@ -29,10 +29,10 @@ Alternatively:
 
 **There are better / easier to use methods in the above recommendations.**
 
-- vaft - [userscript](https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js) / [ublock](https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/master/vaft/vaft-ublock-origin.js) / [ublock (permalink)](https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/4c284aa39e9122765b2e917c90026f954e837926/vaft/vaft-ublock-origin.js)
+- vaft - [userscript](https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js) / [ublock](https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/master/vaft/vaft-ublock-origin.js) / [ublock (permalink)](https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/267c9542bb2043e80fe2dc801a2cc3e5f1c41a1a/vaft/vaft-ublock-origin.js)
   - Attempts to get a clean stream as fast as it can
   - If it fails to get a clean stream it removes ad segments (no playback until ad-free stream is found)
-- video-swap-new - [userscript](https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js) / [ublock](https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/master/video-swap-new/video-swap-new-ublock-origin.js) / [ublock (permalink)](https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/4c284aa39e9122765b2e917c90026f954e837926/video-swap-new/video-swap-new-ublock-origin.js)
+- video-swap-new - [userscript](https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js) / [ublock](https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/master/video-swap-new/video-swap-new-ublock-origin.js) / [ublock (permalink)](https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/267c9542bb2043e80fe2dc801a2cc3e5f1c41a1a/video-swap-new/video-swap-new-ublock-origin.js)
   - Attempts to get a clean stream
   - If it fails to get a clean stream it removes ad segments (no playback until ad-free stream is found)
   - Not recommended, `vaft` is a better script
