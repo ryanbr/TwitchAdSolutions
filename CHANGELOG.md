@@ -1,5 +1,12 @@
 ## Unreleased
 
+## v60.1.0 (2026-04-18)
+
+### Bug Fixes
+- **Increase early reload budget when recovery cache is thin** — when `RecoverySegments.length < 3`, budget is now `max(2, PodLength)` instead of `max(1, PodLength)`. Gives Twitch a second chance to stop serving ads before giving up. Critical fix for heavy SSAI breaks reported in issue #129 (vaft) (#134)
+- **Reset `EarlyReloadTriggered` on 'still ads' result** — the flag was never reset after an early reload landed back in ads, blocking the budget from ever firing a second reload. Applied to both sticky CSAI path and normal backup-search path (vaft) (#134, #147)
+- **Use hard reload for mid-break early reloads** — PR #144's universal soft reload reused the cached access token, meaning all N reloads landed in the same ad-decision session. Split by reload kind: `'early'` → hard reload (fresh session, new ad bucket), post-ad → soft reload (smooth transition). Restores SSAI-escape capability that the soft-reload switch accidentally removed (vaft) (#146)
+
 ## v60.0.0 (2026-04-17)
 
 ### New Features
