@@ -1228,7 +1228,8 @@ twitch-videoad.js text/javascript
                     streamInfo.IsUsingModifiedM3U8 = false;
                     streamInfo.LastPlayerReload = Date.now();
                     postMessage({
-                        key: 'ReloadPlayer'
+                        key: 'ReloadPlayer',
+                        kind: 'early'
                     });
                 } else {
                     if (tooSoonSinceLastReload) {
