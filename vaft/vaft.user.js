@@ -1205,8 +1205,13 @@
                     streamInfo.ReloadTimestamps.push(Date.now());
                     streamInfo.IsUsingModifiedM3U8 = false;
                     streamInfo.LastPlayerReload = Date.now();
+                    // Hard reload when buffer may be dirty from strip or m3u8 modification —
+                    // soft reload preserves the existing MediaSource buffer, and any
+                    // timestamp weirdness from strip/BLANK_MP4/recovery injection persists
+                    // across it, causing audio/video desync over time.
                     postMessage({
-                        key: 'ReloadPlayer'
+                        key: 'ReloadPlayer',
+                        kind: 'early'
                     });
                 } else {
                     if (tooSoonSinceLastReload) {
