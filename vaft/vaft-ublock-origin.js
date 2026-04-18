@@ -360,7 +360,7 @@ twitch-videoad.js text/javascript
                     } else if (e.data.key == 'PauseResumePlayer') {
                         doTwitchPlayerTask(true, false);
                     } else if (e.data.key == 'ReloadPlayer') {
-                        doTwitchPlayerTask(false, true);
+                        doTwitchPlayerTask(false, true, e.data.kind);
                     }
                 });
                 this.addEventListener('message', async event => {
@@ -880,7 +880,7 @@ twitch-videoad.js text/javascript
                     streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
                     const stickyReason = stickyRecoveryThin ? ' (thin recovery cache: ' + (streamInfo.RecoverySegments?.length || 0) + ' segments)' : '';
                     console.log('[AD DEBUG] Early reload triggered (sticky path) — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls' + stickyReason + ' [' + streamInfo.EarlyReloadCount + '/' + stickyMaxEarlyReloads + ']');
-                    postMessage({ key: 'ReloadPlayer' });
+                    postMessage({ key: 'ReloadPlayer', kind: 'early' });
                 }
                 postMessage({
                     key: 'UpdateAdBlockBanner',
@@ -1108,7 +1108,7 @@ twitch-videoad.js text/javascript
                 streamInfo.EarlyReloadAtPoll = streamInfo.TotalAllStrippedPolls || streamInfo.ConsecutiveAllStrippedPolls;
                 const reason = recoveryThin ? ' (thin recovery cache: ' + (streamInfo.RecoverySegments?.length || 0) + ' segments)' : '';
                 console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls' + reason + ' [' + streamInfo.EarlyReloadCount + '/' + maxEarlyReloads + ']');
-                postMessage({ key: 'ReloadPlayer' });
+                postMessage({ key: 'ReloadPlayer', kind: 'early' });
             }
         } else if (streamInfo.IsShowingAd) {
             streamInfo.CleanPlaylistCount++;
@@ -1649,7 +1649,7 @@ twitch-videoad.js text/javascript
         };
     }
     // Pause/play or fully reload the Twitch player, preserving quality/volume settings
-    function doTwitchPlayerTask(isPausePlay, isReload) {
+    function doTwitchPlayerTask(isPausePlay, isReload, reloadKind) {
         const playerAndState = getPlayerAndState();
         if (!playerAndState) {
             console.log('Could not find react root');
@@ -1753,11 +1753,11 @@ twitch-videoad.js text/javascript
             playerBufferState.userPauseIntent = false;
             playerBufferState.loggedPauseIntent = false;
             // playerForMonitoringBuffering re-acquired fresh every tick — no manual invalidation needed
-            console.log('Reloading Twitch player');
-            // Soft reload: keep the player instance alive and reuse the cached access token.
-            // Smoother transition than the hard reload (no ~1-3s black screen during teardown).
-            // Ported from TTV-AB's post-ad reload pattern (v6.3.9 / v6.4.3).
-            playerState.setSrc({ isNewMediaPlayerInstance: false, refreshAccessToken: false });
+            // Hard reload for 'early' (mid-break escape — fresh session gets new ad-decision bucket).
+            // Soft reload for 'post-ad' (smooth transition, no black screen teardown).
+            const hardReload = reloadKind === 'early';
+            console.log('Reloading Twitch player' + (hardReload ? ' (hard)' : ' (soft)'));
+            playerState.setSrc({ isNewMediaPlayerInstance: hardReload, refreshAccessToken: hardReload });
             postTwitchWorkerMessage('TriggeredPlayerReload');
             player.play()?.catch?.(() => {});
             // Always restore muted/volume state after reload — Chrome autoplay policy can force muted
