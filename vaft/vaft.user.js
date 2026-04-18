@@ -888,8 +888,14 @@
                 // cache for the full break duration (observed: 35.9s freeze on pod-1
                 // break, 3 all-stripped polls, 1-segment recovery cache).
                 // Bounded to maxEarlyReloads per ad in pod so reload loops are impossible.
-                const stickyMaxEarlyReloads = Math.max(1, streamInfo.PodLength || 1);
+                // Check early reload result from previous poll (sticky path returns before the normal-path check)
+                if (streamInfo.EarlyReloadAwaitingResult) {
+                    streamInfo.EarlyReloadAwaitingResult = false;
+                    console.log('[AD DEBUG] Early reload result (sticky path): still ads — continuing recovery loop');
+                    streamInfo.EarlyReloadTriggered = false;
+                }
                 const stickyRecoveryThin = (streamInfo.RecoverySegments?.length || 0) < 3;
+                const stickyMaxEarlyReloads = stickyRecoveryThin ? Math.max(2, streamInfo.PodLength || 1) : Math.max(1, streamInfo.PodLength || 1);
                 const stickyEffectiveThreshold = stickyRecoveryThin ? 1 : EarlyReloadPollThreshold;
                 if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= stickyEffectiveThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < stickyMaxEarlyReloads) {
                     streamInfo.EarlyReloadTriggered = true;
