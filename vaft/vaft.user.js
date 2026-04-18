@@ -1117,6 +1117,7 @@
                     streamInfo.EarlyReloadTriggered = false;
                 } else {
                     console.log('[AD DEBUG] Early reload result: still ads — continuing recovery loop');
+                    streamInfo.EarlyReloadTriggered = false;
                 }
             }
             // Early reload during prolonged freeze: if we've been looping recovery segments
