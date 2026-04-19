@@ -856,6 +856,11 @@ twitch-videoad.js text/javascript
             // the whole CSAI break saves ~20 wasted fetches per break — the backup wouldn't
             // help anyway since every player type has the same CSAI ads. Flag is cleared
             // only at break end (IsShowingAd=false path).
+            // Sticky CSAI escape hatch (PreferLowQualityBackup): after ~12s stuck, fall through to backup search.
+            if (PreferLowQualityBackup && streamInfo.CsaiOnlyThisBreak && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= 6) {
+                console.log('[AD DEBUG] Sticky CSAI escape hatch — stuck ' + streamInfo.ConsecutiveAllStrippedPolls + ' polls, falling through to backup search');
+                streamInfo.CsaiOnlyThisBreak = false;
+            }
             if (streamInfo.CsaiOnlyThisBreak && !streamInfo.IsUsingModifiedM3U8) {
                 if (IsAdStrippingEnabled) {
                     textStr = stripAdSegments(textStr, false, streamInfo);
@@ -906,7 +911,7 @@ twitch-videoad.js text/javascript
                     break;
                 }
             }
-            if (!hasNonLiveSegment && !streamInfo.IsUsingModifiedM3U8 && !PreferLowQualityBackup) {
+            if (!hasNonLiveSegment && !streamInfo.IsUsingModifiedM3U8) {
                 streamInfo.CsaiOnlyThisBreak = true;// Mark break as confirmed CSAI so subsequent polls stay on the fast path
                 console.log('[AD DEBUG] CSAI fast path — all segments live, skipping backup search');
                 if (IsAdStrippingEnabled) {
@@ -2010,7 +2015,7 @@ twitch-videoad.js text/javascript
         const lsPreferLow = localStorage.getItem('twitchAdSolutions_preferLowQualityBackup');
         if (lsPreferLow === 'true') {
             PreferLowQualityBackup = true;
-            console.log('[AD DEBUG] PreferLowQualityBackup enabled — CSAI fast path disabled, autoplay (360p) added as last-resort backup');
+            console.log('[AD DEBUG] PreferLowQualityBackup enabled — autoplay (360p) added as last-resort backup + sticky escape hatch after ~12s freeze');
         }
         const lsHideAdOverlay = localStorage.getItem('twitchAdSolutions_hideAdOverlay');
         if (lsHideAdOverlay === 'true') {
