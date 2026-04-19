@@ -891,6 +891,11 @@ twitch-videoad.js text/javascript
             // segments that flip hasNonLiveSegment to true. Prevents a slow backup search from
             // running on poll 2+, completing tens of seconds after the break ended, and
             // overwriting cleared streamInfo state with stale backup data (PR #124 from release).
+            // Sticky CSAI escape hatch (PreferLowQualityBackup): after ~12s stuck, fall through to backup search.
+            if (PreferLowQualityBackup && streamInfo.SawCSAIFastPath && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= 6) {
+                console.log('[AD DEBUG] Sticky CSAI escape hatch — stuck ' + streamInfo.ConsecutiveAllStrippedPolls + ' polls, falling through to backup search');
+                streamInfo.SawCSAIFastPath = false;
+            }
             if (streamInfo.SawCSAIFastPath && !streamInfo.IsUsingModifiedM3U8) {
                 // Stay on the sticky fast path for the whole break. No mid-break clear.
                 // stripAdSegments still handles any real EXTINF ad segments via the segment
@@ -945,7 +950,7 @@ twitch-videoad.js text/javascript
                     break;
                 }
             }
-            if (!hasNonLiveSegment && !streamInfo.IsUsingModifiedM3U8 && !PreferLowQualityBackup) {
+            if (!hasNonLiveSegment && !streamInfo.IsUsingModifiedM3U8) {
                 streamInfo.SawCSAIFastPath = true;
                 console.log('[AD DEBUG] CSAI fast path — all segments live, skipping backup search');
                 if (IsAdStrippingEnabled) {
@@ -2028,7 +2033,7 @@ twitch-videoad.js text/javascript
         const lsPreferLow = localStorage.getItem('twitchAdSolutions_preferLowQualityBackup');
         if (lsPreferLow === 'true') {
             PreferLowQualityBackup = true;
-            console.log('[AD DEBUG] PreferLowQualityBackup enabled — CSAI fast path disabled, autoplay (360p) added as last-resort backup');
+            console.log('[AD DEBUG] PreferLowQualityBackup enabled — autoplay (360p) added as last-resort backup + sticky escape hatch after ~12s freeze');
         }
         const lsHideAdOverlay = localStorage.getItem('twitchAdSolutions_hideAdOverlay');
         if (lsHideAdOverlay === 'true') {
