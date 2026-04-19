@@ -143,6 +143,7 @@ twitch-videoad.js text/javascript
             EarlyReloadAtPoll: 0,
             EarlyReloadTriggered: false,
             EarlyReloadAwaitingResult: false,
+            EscapeHatchFired: false,
             LastPlayerReload: 0,
             ReloadTimestamps: [],
             HasCheckedUnknownTags: false,
@@ -858,8 +859,12 @@ twitch-videoad.js text/javascript
             // only at break end (IsShowingAd=false path).
             // Sticky CSAI escape hatch (PreferLowQualityBackup): after ~12s stuck, fall through to backup search.
             if (PreferLowQualityBackup && streamInfo.CsaiOnlyThisBreak && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= 6) {
-                console.log('[AD DEBUG] Sticky CSAI escape hatch — stuck ' + streamInfo.ConsecutiveAllStrippedPolls + ' polls, falling through to backup search');
+                const stuckPolls = streamInfo.ConsecutiveAllStrippedPolls;
+                const recoveryCacheSize = streamInfo.RecoverySegments?.length || 0;
+                const earlyReloadInfo = (streamInfo.EarlyReloadCount || 0) + '/' + Math.max(1, streamInfo.PodLength || 1);
+                console.log('[AD DEBUG] Sticky CSAI escape hatch — stuck ' + stuckPolls + ' polls (~' + (stuckPolls * 2) + 's), EarlyReloadCount=' + earlyReloadInfo + ', recovery cache=' + recoveryCacheSize + ' segments, falling through to backup search');
                 streamInfo.CsaiOnlyThisBreak = false;
+                streamInfo.EscapeHatchFired = true;
             }
             if (streamInfo.CsaiOnlyThisBreak && !streamInfo.IsUsingModifiedM3U8) {
                 if (IsAdStrippingEnabled) {
@@ -1076,6 +1081,12 @@ twitch-videoad.js text/javascript
                         streamInfo.PinnedBackupPlayerType = backupPlayerType;
                     }
                     console.log(`Blocking${(streamInfo.IsMidroll ? ' midroll ' : ' ')}ads (${backupPlayerType}) — backup found in ${Date.now() - backupSearchStart}ms`);
+                    if (streamInfo.EscapeHatchFired) {
+                        const qualityTier = backupPlayerType === 'autoplay' ? '360p' : 'Source';
+                        console.log('[AD DEBUG] Post-escape backup: ' + backupPlayerType + ' (' + qualityTier + ') — recovered from sticky-path freeze');
+                    } else if (backupPlayerType === 'autoplay' && PreferLowQualityBackup) {
+                        console.log('[AD DEBUG] Autoplay backup committed — 360p fallback after Source types ad-laden (PreferLowQualityBackup)');
+                    }
                 }
             } else if (backupM3u8 && !streamInfo.IsShowingAd) {
                 console.log('[AD DEBUG] Discarded stale backup commit (' + backupPlayerType + ', ' + (Date.now() - backupSearchStart) + 'ms) — break ended during search');
@@ -1160,6 +1171,7 @@ twitch-videoad.js text/javascript
                 streamInfo.EarlyReloadAtPoll = 0;
                 streamInfo.TotalAllStrippedPolls = 0;
                 streamInfo.CsaiOnlyThisBreak = false;
+                streamInfo.EscapeHatchFired = false;
                 streamInfo.HasLoggedAdAttributes = false;
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
