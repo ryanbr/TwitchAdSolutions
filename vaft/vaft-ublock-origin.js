@@ -934,7 +934,7 @@ twitch-videoad.js text/javascript
                 isDoingMinimalRequests = true;
             }
             // Try pinned backup player type first if available
-            const playerTypesToTry = PreferLowQualityBackup ? ['autoplay', ...BackupPlayerTypes] : [...BackupPlayerTypes];
+            const playerTypesToTry = PreferLowQualityBackup ? [...BackupPlayerTypes, 'autoplay'] : [...BackupPlayerTypes];
             if (streamInfo.PinnedBackupPlayerType) {
                 const pinnedIndex = playerTypesToTry.indexOf(streamInfo.PinnedBackupPlayerType);
                 if (pinnedIndex > 0) {
@@ -2010,7 +2010,7 @@ twitch-videoad.js text/javascript
         const lsPreferLow = localStorage.getItem('twitchAdSolutions_preferLowQualityBackup');
         if (lsPreferLow === 'true') {
             PreferLowQualityBackup = true;
-            console.log('[AD DEBUG] PreferLowQualityBackup enabled — CSAI fast path disabled, autoplay (360p) used as first backup');
+            console.log('[AD DEBUG] PreferLowQualityBackup enabled — CSAI fast path disabled, autoplay (360p) added as last-resort backup');
         }
         const lsHideAdOverlay = localStorage.getItem('twitchAdSolutions_hideAdOverlay');
         if (lsHideAdOverlay === 'true') {

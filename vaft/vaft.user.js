@@ -958,10 +958,11 @@
                 isDoingMinimalRequests = true;
             }
             // Try pinned backup player type first if available
-            // When PreferLowQualityBackup is enabled, prepend 'autoplay' (360p) so the cycle
-            // tries it first. Low-quality variants are more often clean, and swapping to
-            // 360p avoids the freeze risk of the CSAI fast path's strip-in-place approach.
-            const playerTypesToTry = PreferLowQualityBackup ? ['autoplay', ...BackupPlayerTypes] : [...BackupPlayerTypes];
+            // When PreferLowQualityBackup is enabled, append 'autoplay' (360p) as a last-resort
+            // fallback — mirrors pixeltris's original behavior. Source backups are tried first;
+            // autoplay only kicks in when they're all ad-laden. Keeps Source quality when
+            // available while guaranteeing a clean backup for heavy SSAI breaks.
+            const playerTypesToTry = PreferLowQualityBackup ? [...BackupPlayerTypes, 'autoplay'] : [...BackupPlayerTypes];
             if (streamInfo.PinnedBackupPlayerType) {
                 const pinnedIndex = playerTypesToTry.indexOf(streamInfo.PinnedBackupPlayerType);
                 if (pinnedIndex > 0) {
@@ -2041,7 +2042,7 @@
         const lsPreferLow = localStorage.getItem('twitchAdSolutions_preferLowQualityBackup');
         if (lsPreferLow === 'true') {
             PreferLowQualityBackup = true;
-            console.log('[AD DEBUG] PreferLowQualityBackup enabled — CSAI fast path disabled, autoplay (360p) used as first backup');
+            console.log('[AD DEBUG] PreferLowQualityBackup enabled — CSAI fast path disabled, autoplay (360p) added as last-resort backup');
         }
         const lsHideAdOverlay = localStorage.getItem('twitchAdSolutions_hideAdOverlay');
         if (lsHideAdOverlay === 'true') {
