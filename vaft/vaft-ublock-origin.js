@@ -1507,7 +1507,8 @@ twitch-videoad.js text/javascript
                             console.log('[AD DEBUG] Loading circle detected during ad break (' + ((Date.now() - playerBufferState.adStallStartAt) / 1000).toFixed(1) + 's stall, readyState=' + video.readyState + ') — early reload');
                             playerBufferState.lastAdStallReloadAt = Date.now();
                             playerBufferState.adStallStartAt = 0;
-                            doTwitchPlayerTask(false, true);
+                            // Hard reload: a stuck media player needs its MediaSource rebuilt, not just an m3u8 refetch.
+                            doTwitchPlayerTask(false, true, 'early');
                         }
                     } else if (!isStalled) {
                         playerBufferState.adStallStartAt = 0;
