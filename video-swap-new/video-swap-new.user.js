@@ -190,10 +190,11 @@
         return !hasConflict || hasAllow || hasReinsert;
     }
     let injectedBlobUrl = null;
+    let originalRevokeObjectURL = null;
     function hookWindowWorker() {
         // Prevent Twitch from revoking our injected worker blob URL
         if (!URL.revokeObjectURL.__tasMasked) {
-            const originalRevokeObjectURL = URL.revokeObjectURL;
+            originalRevokeObjectURL = URL.revokeObjectURL;
             URL.revokeObjectURL = maskAsNative(function(url) {
                 if (url === injectedBlobUrl) return;
                 return originalRevokeObjectURL.call(this, url);
@@ -290,6 +291,9 @@
                     hookWorkerFetch();
                     eval(workerString);
                 `
+                if (injectedBlobUrl && originalRevokeObjectURL) {
+                    try { originalRevokeObjectURL.call(URL, injectedBlobUrl); } catch {}
+                }
                 injectedBlobUrl = URL.createObjectURL(new Blob([newBlobStr]));
                 super(injectedBlobUrl, options);
                 twitchWorkers.length = 0;
