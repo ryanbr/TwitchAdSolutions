@@ -25,7 +25,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 607;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 608;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft-testing v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft-testing v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -143,6 +143,7 @@ twitch-videoad.js text/javascript
             EarlyReloadAtPoll: 0,
             EarlyReloadTriggered: false,
             EarlyReloadAwaitingResult: false,
+            EscapeHatchFired: false,
             // Reload cooldown
             LastPlayerReload: 0,
             ReloadTimestamps: [],
@@ -893,8 +894,12 @@ twitch-videoad.js text/javascript
             // overwriting cleared streamInfo state with stale backup data (PR #124 from release).
             // Sticky CSAI escape hatch (PreferLowQualityBackup): after ~12s stuck, fall through to backup search.
             if (PreferLowQualityBackup && streamInfo.SawCSAIFastPath && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= 6) {
-                console.log('[AD DEBUG] Sticky CSAI escape hatch — stuck ' + streamInfo.ConsecutiveAllStrippedPolls + ' polls, falling through to backup search');
+                const stuckPolls = streamInfo.ConsecutiveAllStrippedPolls;
+                const recoveryCacheSize = streamInfo.RecoverySegments?.length || 0;
+                const earlyReloadInfo = (streamInfo.EarlyReloadCount || 0) + '/' + Math.max(1, streamInfo.PodLength || 1);
+                console.log('[AD DEBUG] Sticky CSAI escape hatch — stuck ' + stuckPolls + ' polls (~' + (stuckPolls * 2) + 's), EarlyReloadCount=' + earlyReloadInfo + ', recovery cache=' + recoveryCacheSize + ' segments, falling through to backup search');
                 streamInfo.SawCSAIFastPath = false;
+                streamInfo.EscapeHatchFired = true;
             }
             if (streamInfo.SawCSAIFastPath && !streamInfo.IsUsingModifiedM3U8) {
                 // Stay on the sticky fast path for the whole break. No mid-break clear.
@@ -1112,6 +1117,12 @@ twitch-videoad.js text/javascript
                         streamInfo.PinnedBackupPlayerType = backupPlayerType;
                     }
                     console.log(`Blocking${(streamInfo.IsMidroll ? ' midroll ' : ' ')}ads (${backupPlayerType}) — backup found in ${Date.now() - backupSearchStart}ms`);
+                    if (streamInfo.EscapeHatchFired) {
+                        const qualityTier = backupPlayerType === 'autoplay' ? '360p' : 'Source';
+                        console.log('[AD DEBUG] Post-escape backup: ' + backupPlayerType + ' (' + qualityTier + ') — recovered from sticky-path freeze');
+                    } else if (backupPlayerType === 'autoplay' && PreferLowQualityBackup) {
+                        console.log('[AD DEBUG] Autoplay backup committed — 360p fallback after Source types ad-laden (PreferLowQualityBackup)');
+                    }
                     streamInfo.LastBackupSwitch = Date.now();
                 }
             } else if (backupM3u8 && !streamInfo.IsShowingAd) {
@@ -1203,6 +1214,7 @@ twitch-videoad.js text/javascript
                 streamInfo.TotalAllStrippedPolls = 0;
                 streamInfo.HasLoggedAdAttributes = false;
                 streamInfo.SawCSAIFastPath = false;// Clear sticky CSAI flag for next break
+                streamInfo.EscapeHatchFired = false;
                 // Auto-escalate cooldown: if 3+ reloads in last 2 min, triple the cooldown to reduce cascade pressure
                 if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
                 streamInfo.ReloadTimestamps = streamInfo.ReloadTimestamps.filter(t => Date.now() - t < 300000);
