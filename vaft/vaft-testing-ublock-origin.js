@@ -54,6 +54,7 @@ twitch-videoad.js text/javascript
         ];
         scope.FallbackPlayerType = 'embed';
         scope.ForceAccessTokenPlayerType = 'popout';
+        scope.PreferLowQualityBackup = false;// If true, force backup swap on every ad and prepend 'autoplay' (360p) to backup types. Reliability-first mode.
         scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers)
         scope.AlwaysReloadPlayerOnAd = false;// Always pause/play when entering/leaving ads
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
@@ -283,6 +284,7 @@ twitch-videoad.js text/javascript
                     DisableReloadCap = ${DisableReloadCap};
                     PinBackupPlayerType = ${PinBackupPlayerType};
                     EarlyReloadPollThreshold = ${EarlyReloadPollThreshold};
+                    PreferLowQualityBackup = ${PreferLowQualityBackup};
                     DisableAdSpoofing = ${DisableAdSpoofing};
                     ForceAccessTokenPlayerType = '${ForceAccessTokenPlayerType}';
                     GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
@@ -943,7 +945,7 @@ twitch-videoad.js text/javascript
                     break;
                 }
             }
-            if (!hasNonLiveSegment && !streamInfo.IsUsingModifiedM3U8) {
+            if (!hasNonLiveSegment && !streamInfo.IsUsingModifiedM3U8 && !PreferLowQualityBackup) {
                 streamInfo.SawCSAIFastPath = true;
                 console.log('[AD DEBUG] CSAI fast path — all segments live, skipping backup search');
                 if (IsAdStrippingEnabled) {
@@ -971,7 +973,7 @@ twitch-videoad.js text/javascript
                 isDoingMinimalRequests = true;
             }
             // Try pinned backup player type first if available
-            const playerTypesToTry = [...BackupPlayerTypes];
+            const playerTypesToTry = PreferLowQualityBackup ? ['autoplay', ...BackupPlayerTypes] : [...BackupPlayerTypes];
             if (streamInfo.PinnedBackupPlayerType) {
                 const pinnedIndex = playerTypesToTry.indexOf(streamInfo.PinnedBackupPlayerType);
                 if (pinnedIndex > 0) {
@@ -2022,6 +2024,11 @@ twitch-videoad.js text/javascript
         const lsPinBackup = localStorage.getItem('twitchAdSolutions_pinBackupPlayerType');
         if (lsPinBackup !== null) {
             PinBackupPlayerType = lsPinBackup === 'true';
+        }
+        const lsPreferLow = localStorage.getItem('twitchAdSolutions_preferLowQualityBackup');
+        if (lsPreferLow === 'true') {
+            PreferLowQualityBackup = true;
+            console.log('[AD DEBUG] PreferLowQualityBackup enabled — CSAI fast path disabled, autoplay (360p) used as first backup');
         }
         const lsHideAdOverlay = localStorage.getItem('twitchAdSolutions_hideAdOverlay');
         if (lsHideAdOverlay === 'true') {
