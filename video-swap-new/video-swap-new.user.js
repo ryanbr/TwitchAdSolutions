@@ -88,6 +88,7 @@
             HasCheckedUnknownTags: false,
             HasConfirmedAdAttrs: false,
             HasLoggedAdAttributes: false,
+            HasLoggedUnknownSignifiers: false,
             IsMovingOffBackupEncodings: false,
             IsMidroll: false,
             IsStrippingAdSegments: false,
@@ -519,6 +520,24 @@
                 console.log('[AD DEBUG] Ad tracking attributes seen: ' + [...new Set(adAttrs)].join(', '));
             }
         }
+        // Log potential ad markers that aren't in AD_SIGNIFIERS (candidates for future inclusion)
+        if (!streamInfo.HasLoggedUnknownSignifiers) {
+            const candidates = new Set();
+            let sm;
+            const classRe = /EXT-X-DATERANGE:[^\n]*CLASS="(twitch-[^"]+)"/g;
+            while ((sm = classRe.exec(textStr)) !== null) {
+                candidates.add('EXT-X-DATERANGE:CLASS="' + sm[1] + '"');
+            }
+            const tagRe = /(SCTE35-[A-Z-]+|EXT-X-CUE-[A-Z-]+)/g;
+            while ((sm = tagRe.exec(textStr)) !== null) {
+                candidates.add(sm[1]);
+            }
+            const unknown = [...candidates].filter(c => !AD_SIGNIFIERS.includes(c));
+            if (unknown.length > 0) {
+                streamInfo.HasLoggedUnknownSignifiers = true;
+                console.log('[AD DEBUG] Potential ad markers seen but not in AD_SIGNIFIERS: ' + unknown.join(', ') + ' (candidates for future inclusion)');
+            }
+        }
         for (let i = 0; i < lines.length; i++) {
             let line = lines[i];
             // Track SCTE-35 CUE-OUT/CUE-IN ad boundaries
@@ -734,6 +753,7 @@
                             streamInfo.HasConfirmedAdAttrs = false;
                             streamInfo.HasLoggedCsaiFastPath = false;
                             streamInfo.HasLoggedAdAttributes = false;
+                            streamInfo.HasLoggedUnknownSignifiers = false;
                             streamInfo.RequestedAds.clear();
                             streamInfo.ConsecutiveAllStrippedPolls = 0;
                             streamInfo.EarlyReloadTriggered = false;

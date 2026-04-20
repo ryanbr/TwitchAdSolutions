@@ -172,6 +172,7 @@
             // Diagnostic flags (once-per-session)
             HasCheckedUnknownTags: false,
             HasLoggedAdAttributes: false,
+            HasLoggedUnknownSignifiers: false,
         };
     }
     function maskAsNative(fn, name) {
@@ -593,6 +594,24 @@
             if (adAttrs && adAttrs.length > 0) {
                 streamInfo.HasLoggedAdAttributes = true;
                 console.log('[AD DEBUG] Ad tracking attributes seen: ' + [...new Set(adAttrs)].join(', '));
+            }
+        }
+        // Log potential ad markers that aren't in AdSignifiers (candidates for future inclusion)
+        if (!streamInfo.HasLoggedUnknownSignifiers) {
+            const candidates = new Set();
+            let sm;
+            const classRe = /EXT-X-DATERANGE:[^\n]*CLASS="(twitch-[^"]+)"/g;
+            while ((sm = classRe.exec(textStr)) !== null) {
+                candidates.add('EXT-X-DATERANGE:CLASS="' + sm[1] + '"');
+            }
+            const tagRe = /(SCTE35-[A-Z-]+|EXT-X-CUE-[A-Z-]+)/g;
+            while ((sm = tagRe.exec(textStr)) !== null) {
+                candidates.add(sm[1]);
+            }
+            const unknown = [...candidates].filter(c => !AdSignifiers.includes(c));
+            if (unknown.length > 0) {
+                streamInfo.HasLoggedUnknownSignifiers = true;
+                console.log('[AD DEBUG] Potential ad markers seen but not in AdSignifiers: ' + unknown.join(', ') + ' (candidates for future inclusion)');
             }
         }
         for (let i = 0; i < lines.length; i++) {
@@ -1205,6 +1224,7 @@
                 streamInfo.CsaiOnlyThisBreak = false;
                 streamInfo.EscapeHatchFired = false;
                 streamInfo.HasLoggedAdAttributes = false;
+                streamInfo.HasLoggedUnknownSignifiers = false;
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
