@@ -1149,8 +1149,8 @@
             // Early reload during prolonged freeze: if we've been looping recovery segments
             // for N+ polls (~Nx2s), trigger a reload to attempt fresh content. Bounded to one
             // reload per ad in the pod (e.g. 2-ad pod = up to 2 early reloads).
-            const maxEarlyReloads = Math.max(1, streamInfo.PodLength || 1);
             const recoveryThin = (streamInfo.RecoverySegments?.length || 0) < 3;
+            const maxEarlyReloads = recoveryThin ? Math.max(2, streamInfo.PodLength || 1) : Math.max(1, streamInfo.PodLength || 1);
             const effectiveThreshold = recoveryThin ? 1 : EarlyReloadPollThreshold;
             if (EarlyReloadPollThreshold > 0 && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= effectiveThreshold && !streamInfo.EarlyReloadTriggered && (streamInfo.EarlyReloadCount || 0) < maxEarlyReloads) {
                 streamInfo.EarlyReloadTriggered = true;
