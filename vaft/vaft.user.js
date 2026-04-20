@@ -1835,11 +1835,18 @@
                         if (videos.length > 0 && videos[0].muted) {
                             videos[0].muted = false;
                         }
-                        // Correct live drift after reload
+                        // Correct live drift after reload.
+                        // For hard reload with large drift (>5s), hard-seek to live edge to flush
+                        // any A/V timestamp desync from strip+BLANK_MP4+recovery activity. Drift
+                        // correction at 1.1x would take minutes to catch up 30-60s of drift.
+                        // For soft reload or small drift, use existing gradual catch-up.
                         if (videos.length > 0 && videos[0].buffered.length > 0 && videos[0].readyState >= 3) {
                             const liveEdge = videos[0].buffered.end(videos[0].buffered.length - 1);
                             const drift = liveEdge - videos[0].currentTime;
-                            if (drift > 2) {
+                            if (hardReload && drift > 5 && Number.isFinite(liveEdge) && liveEdge < 3600) {
+                                console.log('[AD DEBUG] Post-hard-reload seek to live — ' + drift.toFixed(1) + 's behind, jumping to live edge to flush A/V drift');
+                                videos[0].currentTime = liveEdge;
+                            } else if (drift > 2) {
                                 console.log('[AD DEBUG] Post-reload live drift correction: ' + drift.toFixed(1) + 's behind');
                                 startDriftCorrection(videos[0]);
                             }
