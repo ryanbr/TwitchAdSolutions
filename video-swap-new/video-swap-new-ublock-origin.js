@@ -115,6 +115,7 @@ twitch-videoad.js text/javascript
     let localStorageHookFailed = false;
     let lastReloadTimestamp = 0;
     let reloadTimestamps = [];
+    let EscalatedFromCooldown = null;// tracks pre-escalation value so we can revert when the burst subsides
     const twitchWorkers = [];
     const workerStringConflicts = [
         'twitch',
@@ -1215,8 +1216,13 @@ twitch-videoad.js text/javascript
             const fiveMinAgo = now - 300000;
             while (reloadTimestamps.length > 0 && reloadTimestamps[0] < fiveMinAgo) { reloadTimestamps.shift(); }
             if (reloadTimestamps.length >= 3 && ReloadCooldownSeconds < 90) {
+                EscalatedFromCooldown = ReloadCooldownSeconds;
                 ReloadCooldownSeconds = 90;
                 console.log('[AD DEBUG] Auto-escalated reload cooldown to 90s (3+ reloads in 5 minutes)');
+            } else if (EscalatedFromCooldown !== null && reloadTimestamps.length < 3) {
+                console.log('[AD DEBUG] De-escalated reload cooldown back to ' + EscalatedFromCooldown + 's (burst subsided)');
+                ReloadCooldownSeconds = EscalatedFromCooldown;
+                EscalatedFromCooldown = null;
             }
             lastReloadTimestamp = now;
         }
