@@ -1832,7 +1832,11 @@
                             localStorage.setItem(lsKeyVolume, currentVolumeLS);
                         }
                         const videos = document.getElementsByTagName('video');
-                        if (videos.length > 0 && videos[0].muted) {
+                        // Respect user's mute intent: only force-unmute if LS didn't say mute.
+                        // Twitch writes video-muted as '{"default":true}' when user muted via UI;
+                        // Chrome autoplay policy can mute even if user didn't (no LS signal).
+                        const userIntendedMute = currentMutedLS && currentMutedLS.includes('"default":true');
+                        if (videos.length > 0 && videos[0].muted && !userIntendedMute) {
                             videos[0].muted = false;
                         }
                         // Correct live drift after reload
