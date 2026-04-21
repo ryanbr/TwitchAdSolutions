@@ -272,12 +272,20 @@
                                 if (responseData.error) {
                                     reject(new Error(responseData.error));
                                 } else {
-                                    // Create a Response object from the response data
+                                    // Create a Response object from the response data.
+                                    // Response constructor only takes status/statusText/headers — url/redirected/type
+                                    // must be defined on the instance. IVS WASM validates these (Spade/tracking
+                                    // requests) and throws NetworkError if they're missing — TTV-AB v6.3.5 fix.
                                     const response = new Response(responseData.body, {
                                         status: responseData.status,
                                         statusText: responseData.statusText,
                                         headers: responseData.headers
                                     });
+                                    try {
+                                        Object.defineProperty(response, 'url', { value: responseData.url || '', configurable: true });
+                                        Object.defineProperty(response, 'redirected', { value: !!responseData.redirected, configurable: true });
+                                        Object.defineProperty(response, 'type', { value: responseData.type || 'basic', configurable: true });
+                                    } catch {}
                                     resolve(response);
                                 }
                             }
@@ -1056,6 +1064,10 @@
                 id: fetchRequest.id,
                 status: response.status,
                 statusText: response.statusText,
+                ok: response.ok,
+                redirected: response.redirected,
+                type: response.type,
+                url: response.url,
                 headers: Object.fromEntries(response.headers.entries()),
                 body: responseBody
             };
