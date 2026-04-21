@@ -901,10 +901,10 @@
             // help anyway since every player type has the same CSAI ads. Flag is cleared
             // only at break end (IsShowingAd=false path).
             // Sticky CSAI escape hatch (PreferLowQualityBackup): if the sticky path has
-            // been stuck in all-stripped state for too long (~12s), fall through to backup
+            // been stuck in all-stripped state for too long (~8s), fall through to backup
             // search. Gives heavy-SSAI channels a way out of the sticky freeze by trying
             // Source backups + autoplay fallback instead of sitting in recovery loop.
-            if (PreferLowQualityBackup && streamInfo.CsaiOnlyThisBreak && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= 6) {
+            if (PreferLowQualityBackup && streamInfo.CsaiOnlyThisBreak && (streamInfo.ConsecutiveAllStrippedPolls || 0) >= 4) {
                 const stuckPolls = streamInfo.ConsecutiveAllStrippedPolls;
                 const recoveryCacheSize = streamInfo.RecoverySegments?.length || 0;
                 const earlyReloadInfo = (streamInfo.EarlyReloadCount || 0) + '/' + Math.max(1, streamInfo.PodLength || 1);
