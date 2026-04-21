@@ -1229,6 +1229,18 @@
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
                     streamInfo.IsUsingModifiedM3U8 = false;
+                    // Exception: if the committed backup was autoplay (360p), clearing the
+                    // flag restores native m3u8 delivery but the player's access token is
+                    // still autoplay-scoped — variant ladder is 360p-only and viewer stays
+                    // stuck at 360p until a future break forces a reload. Trigger a hard
+                    // reload now to refresh the token and restore Source quality.
+                    if (streamInfo.LastCommittedBackupPlayerType === 'autoplay') {
+                        console.log('[AD DEBUG] Post-escape on autoplay (360p) — forcing reload to restore Source quality');
+                        streamInfo.LastPlayerReload = Date.now();
+                        if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
+                        streamInfo.ReloadTimestamps.push(Date.now());
+                        postMessage({ key: 'ReloadPlayer', kind: 'early' });
+                    }
                 } else {
                 // Auto-escalate cooldown: if 3+ reloads in last 5 min, triple the cooldown
                 if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
