@@ -1595,7 +1595,11 @@
                     const isStalled = video.readyState < 3 && (video.paused || video.networkState === 2);
                     const stallReloadCooldown = 15000;
                     const cooldownExpired = !playerBufferState.lastAdStallReloadAt || (Date.now() - playerBufferState.lastAdStallReloadAt) > stallReloadCooldown;
-                    if (isStalled && cooldownExpired && playerBufferState.hasHadData) {
+                    // Don't fire loading-circle reload if ANY reload happened recently — readyState=0
+                    // is the expected transient state during a reload's MediaSource teardown. Without
+                    // this, an early-reload in flight can trigger a redundant loading-circle reload.
+                    const recentReload = playerBufferState.lastReloadAt && (Date.now() - playerBufferState.lastReloadAt) < stallReloadCooldown;
+                    if (isStalled && cooldownExpired && !recentReload && playerBufferState.hasHadData) {
                         if (!playerBufferState.adStallStartAt) {
                             playerBufferState.adStallStartAt = Date.now();
                         } else if ((Date.now() - playerBufferState.adStallStartAt) > 3000) {
@@ -1867,6 +1871,7 @@
                 }
             } catch {}
             playerBufferState.lastReloadAt = Date.now();
+            playerBufferState.adStallStartAt = 0;// clear stale stall timer so post-reload readyState=0 isn't attributed to pre-reload stall
             playerBufferState.userPauseIntent = false;
             playerBufferState.loggedPauseIntent = false;
             // playerForMonitoringBuffering re-acquired fresh every tick — no manual invalidation needed
