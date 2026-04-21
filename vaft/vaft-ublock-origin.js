@@ -1215,7 +1215,11 @@ twitch-videoad.js text/javascript
                 if (cycleRescuedCleanly) {
                     console.log('[AD DEBUG] Cycle rescue handled the break cleanly — skipping end-of-break reload');
                 }
-                const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && hadStrippedSegments && !tooSoonSinceLastReload && !cycleRescuedCleanly);
+                // Post-ad reload bypasses cooldown: it's a buffer flush tied to natural break
+                // end, not a cascade-risk retry. The ad break cycle itself rate-limits this
+                // path (once per break). Cooldown still gates buffer-monitor and other
+                // cascade-risk paths that can fire repeatedly in-break.
+                const shouldReload = streamInfo.IsUsingModifiedM3U8 || (ReloadPlayerAfterAd && hadStrippedSegments && !cycleRescuedCleanly);
                 if (shouldReload) {
                     streamInfo.ReloadTimestamps.push(Date.now());
                     streamInfo.IsUsingModifiedM3U8 = false;
