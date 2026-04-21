@@ -98,9 +98,9 @@ The scripts support runtime configuration via `localStorage`. Set values in the 
 - Not set - buffer monitor reloads at most once per recovery window (default)
 - Only enable if you're seeing genuinely stuck playback that a single reload doesn't fix
 
-**`twitchAdSolutions_preferLowQualityBackup`** (default: `false`, vaft only)
-- `true` - enable hybrid safety net for SSAI-heavy ad breaks. Keeps the sticky CSAI fast path (no regression on clean breaks) but adds: (1) sticky escape hatch — after ~12s stuck on the sticky path with the early-reload budget exhausted, fall through to backup search instead of freezing; (2) `autoplay` (360p) appended as a last-resort backup when all Source types (embed/site/popout/mobile_web) are ad-laden
-- `false` - original behavior: sticky CSAI path stays engaged for the whole break (default)
+**`twitchAdSolutions_preferLowQualityBackup`** (default: `true`, vaft only)
+- Hybrid safety net for SSAI-heavy ad breaks. Keeps the sticky CSAI fast path (no regression on clean breaks) and adds: (1) sticky escape hatch — after ~8s stuck with the early-reload budget exhausted, fall through to backup search instead of freezing; (2) `autoplay` (360p) appended as a last-resort backup when all Source types (embed/site/popout/mobile_web) are ad-laden
+- Set to `false` to disable — sticky CSAI path only, no escape hatch or autoplay fallback
 - ⚠ **Quality caveat**: autoplay only commits when every Source backup is also ad-laden — rare, but the 360p hit is the tradeoff for avoiding long freezes on SSAI-heavy channels
 
 ```js

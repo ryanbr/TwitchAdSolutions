@@ -66,7 +66,7 @@
         ];
         scope.FallbackPlayerType = 'embed';
         scope.ForceAccessTokenPlayerType = 'popout';
-        scope.PreferLowQualityBackup = false;// If true, force backup swap on every ad and prepend 'autoplay' (360p) to backup types. Reliability-first mode — low quality during ads, no freeze risk. Opt-in for users who prefer pixeltris's original behavior.
+        scope.PreferLowQualityBackup = true;// Hybrid safety net for SSAI-heavy breaks: sticky escape hatch (fires after ~8s stuck in all-stripped state) + autoplay (360p) as last-resort backup when all Source types are ad-laden. Default on; set twitchAdSolutions_preferLowQualityBackup=false to disable.
         scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers)
         scope.AlwaysReloadPlayerOnAd = false;// Always pause/play when entering/leaving ads
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
@@ -2095,9 +2095,9 @@
             PinBackupPlayerType = lsPinBackup === 'true';
         }
         const lsPreferLow = localStorage.getItem('twitchAdSolutions_preferLowQualityBackup');
-        if (lsPreferLow === 'true') {
-            PreferLowQualityBackup = true;
-            console.log('[AD DEBUG] PreferLowQualityBackup enabled — autoplay (360p) added as last-resort backup + sticky escape hatch after ~12s freeze');
+        if (lsPreferLow === 'false') {
+            PreferLowQualityBackup = false;
+            console.log('[AD DEBUG] PreferLowQualityBackup disabled via localStorage — sticky CSAI path only, no autoplay fallback or escape hatch');
         }
         const lsHideAdOverlay = localStorage.getItem('twitchAdSolutions_hideAdOverlay');
         if (lsHideAdOverlay === 'true') {

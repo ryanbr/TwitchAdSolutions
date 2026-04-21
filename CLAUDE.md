@@ -45,7 +45,7 @@ All read at init, injected into worker blob:
 - `twitchAdSolutions_disableReloadCap` — `true` to revert to unlimited reloads
 - `twitchAdSolutions_driftCorrectionRate` — number, default `1.1` (0 to disable)
 - `twitchAdSolutions_earlyReloadPollThreshold` — number, default `5` (0 to disable; thin cache overrides to 1)
-- `twitchAdSolutions_preferLowQualityBackup` — `true` for hybrid mode (sticky escape hatch + autoplay last-resort backup), default `false` (vaft only)
+- `twitchAdSolutions_preferLowQualityBackup` — hybrid mode (sticky escape hatch + autoplay last-resort backup), default `true`; set to `false` to disable (vaft only)
 
 ## CSAI vs SSAI
 
