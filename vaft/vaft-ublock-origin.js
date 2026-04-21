@@ -377,6 +377,21 @@ twitch-videoad.js text/javascript
                         });
                     }
                 });
+                // Worker crash recovery — IVS WASM worker can fire RuntimeError
+                // (e.g. "index out of bounds") and die. A single crash fires multiple
+                // error events; dedupe via a local flag. On first error, trigger a
+                // hard reload via the main reload path — Twitch re-spawns the worker
+                // as part of the new player instance, and existing reload cooldown
+                // prevents runaway restart loops.
+                let crashed = false;
+                this.addEventListener('error', (e) => {
+                    if (crashed) return;
+                    crashed = true;
+                    console.log('[AD DEBUG] IVS WASM worker crashed: ' + ((e && e.message) || 'unknown error') + ' — triggering hard reload to recover');
+                    try { doTwitchPlayerTask(false, true, 'early'); } catch (err) {
+                        console.log('[AD DEBUG] Worker crash recovery failed: ' + err.message);
+                    }
+                });
             }
         };
         let workerInstance = reinsertWorkers(newWorker, reinsert);
