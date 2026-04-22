@@ -542,7 +542,10 @@ twitch-videoad.js text/javascript
             while ((sm = tagRe.exec(textStr)) !== null) {
                 candidates.add(sm[1]);
             }
-            const unknown = [...candidates].filter(c => !AD_SIGNIFIERS.includes(c));
+            // Substring check (not exact): a candidate is "known" if any AD_SIGNIFIER
+            // appears within it. This handles prefix signifiers like 'twitch-stitched'
+            // covering 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"' etc.
+            const unknown = [...candidates].filter(c => !AD_SIGNIFIERS.some(s => c.includes(s)));
             if (unknown.length > 0) {
                 streamInfo.HasLoggedUnknownSignifiers = true;
                 console.log('[AD DEBUG] Potential ad markers seen but not in AD_SIGNIFIERS: ' + unknown.join(', ') + ' (candidates for future inclusion)');
