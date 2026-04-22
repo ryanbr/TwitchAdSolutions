@@ -443,7 +443,8 @@ twitch-videoad.js text/javascript
                         // Accept either. Field-observed silently dropping embed backup otherwise.
                         const spat = accessToken?.data?.streamPlaybackAccessToken || accessToken?.streamPlaybackAccessToken;
                         if (!spat) {
-                            console.log('[AD DEBUG] GQL response missing streamPlaybackAccessToken for ' + playerType + '. Response keys: ' + JSON.stringify(Object.keys(accessToken || {})));
+                            const errInfo = accessToken?.errors ? ' errors: ' + JSON.stringify(accessToken.errors).substring(0, 300) : '';
+                            console.log('[AD DEBUG] GQL response missing streamPlaybackAccessToken for ' + playerType + '. Response keys: ' + JSON.stringify(Object.keys(accessToken || {})) + errInfo);
                             continue;
                         }
                         const urlInfo = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + streamInfo.ChannelName + '.m3u8' + streamInfo.UsherParams);
