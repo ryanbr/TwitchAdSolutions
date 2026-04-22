@@ -55,16 +55,20 @@
         scope.UriAttributeRegex = /URI="([^"]+)"/;
         scope.ClientID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
         scope.BackupPlayerTypes = [
-            'embed',//Source
+            // Order matters: first clean type wins. 'embed' moved to end — field-observed
+            // Twitch returns GQL 'server error' for streamPlaybackAccessToken on embed when
+            // requested from twitch.tv origin, wasting ~200-400ms per break as first-try.
+            // Kept in case it ever succeeds on some channel/user combo.
             'site',//Source
             'popout',//Source
             'mobile_web',//Mobile
+            'embed',//Source (unreliable — see note above)
             // 'autoplay' (360p) removed: when committed as cycle backup, the player gets stuck
             // in an endless loading circle after the CSAI-only path releases the backup —
             // autoplay variants don't transition cleanly back to main stream variants.
             //'picture-by-picture-CACHED'//360p (-CACHED is an internal suffix and is removed)
         ];
-        scope.FallbackPlayerType = 'embed';
+        scope.FallbackPlayerType = 'site';// was 'embed' — site is more reliable when all Source types end up ad-laden
         scope.ForceAccessTokenPlayerType = 'popout';
         scope.PreferLowQualityBackup = true;// Hybrid safety net for SSAI-heavy breaks: sticky escape hatch (fires after ~8s stuck in all-stripped state) + autoplay (360p) as last-resort backup when all Source types are ad-laden. Default on; set twitchAdSolutions_preferLowQualityBackup=false to disable.
         scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers)
