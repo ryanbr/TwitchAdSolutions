@@ -1012,13 +1012,18 @@ twitch-videoad.js text/javascript
                             const accessTokenResponse = await getAccessToken(streamInfo.ChannelName, realPlayerType);
                             if (accessTokenResponse.status === 200) {
                                 const accessToken = await accessTokenResponse.json();
-                                if (!accessToken?.data?.streamPlaybackAccessToken) {
-                                    console.log('[AD DEBUG] GQL response format changed — missing data.streamPlaybackAccessToken for ' + realPlayerType + '. Response keys: ' + JSON.stringify(Object.keys(accessToken?.data || accessToken || {})));
+                                // Twitch returns streamPlaybackAccessToken in two observed shapes:
+                                //   { data: { streamPlaybackAccessToken: {...} } } (most player types)
+                                //   { streamPlaybackAccessToken: {...} } (flatter, observed for 'embed')
+                                // Accept either. Field-observed silently dropping embed backup otherwise.
+                                const spat = accessToken?.data?.streamPlaybackAccessToken || accessToken?.streamPlaybackAccessToken;
+                                if (!spat) {
+                                    console.log('[AD DEBUG] GQL response missing streamPlaybackAccessToken for ' + realPlayerType + '. Response keys: ' + JSON.stringify(Object.keys(accessToken || {})));
                                     continue;
                                 }
                                 const urlInfo = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + streamInfo.ChannelName + '.m3u8' + streamInfo.UsherParams);
-                                urlInfo.searchParams.set('sig', accessToken.data.streamPlaybackAccessToken.signature);
-                                urlInfo.searchParams.set('token', accessToken.data.streamPlaybackAccessToken.value);
+                                urlInfo.searchParams.set('sig', spat.signature);
+                                urlInfo.searchParams.set('token', spat.value);
                                 const encodingsM3u8Response = await realFetch(urlInfo.href);
                                 if (encodingsM3u8Response.status === 200) {
                                     encodingsM3u8 = streamInfo.BackupEncodingsM3U8Cache[playerType] = await encodingsM3u8Response.text();
