@@ -1252,13 +1252,19 @@
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
                     streamInfo.IsUsingModifiedM3U8 = false;
-                    // Exception: if the committed backup was autoplay (360p), clearing the
-                    // flag restores native m3u8 delivery but the player's access token is
-                    // still autoplay-scoped — variant ladder is 360p-only and viewer stays
-                    // stuck at 360p until a future break forces a reload. Trigger a hard
-                    // reload now to refresh the token and restore Source quality.
-                    if (streamInfo.LastCommittedBackupPlayerType === 'autoplay') {
-                        console.log('[AD DEBUG] Post-escape on autoplay (360p) — forcing reload to restore Source quality');
+                    // Exception: if ANY backup was committed during this break (escape hatch
+                    // or cycle rescue that didn't meet cycleRescuedCleanly criteria), the
+                    // MediaSource buffer has accumulated mixed-source segments (backup-fetched
+                    // via alternate player-type access token + native-fetched). Mixing can
+                    // cause audio/video track timestamps to diverge, and without a reload the
+                    // drift compounds across subsequent escape-hatch breaks. Force a hard reload
+                    // to flush the MediaSource buffer + refresh the access token.
+                    // For autoplay (360p) specifically, the reload also restores Source
+                    // quality (autoplay-scoped token only serves 360p variant ladder).
+                    if (streamInfo.LastCommittedBackupPlayerType) {
+                        const isAutoplay = streamInfo.LastCommittedBackupPlayerType === 'autoplay';
+                        const reason = isAutoplay ? 'autoplay (360p) — restoring Source quality' : streamInfo.LastCommittedBackupPlayerType + ' — flushing MediaSource to prevent A/V desync accumulation';
+                        console.log('[AD DEBUG] Post-escape reload: ' + reason);
                         streamInfo.LastPlayerReload = Date.now();
                         if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
                         streamInfo.ReloadTimestamps.push(Date.now());
