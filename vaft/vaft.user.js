@@ -44,7 +44,12 @@
     window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
     // Configuration and state shared between window and worker scopes
     function declareOptions(scope) {
-        scope.AdSignifiers = ['stitched-ad', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"'];
+        // 'twitch-stitched' catches the twitch-stitched-* DATERANGE class family
+        // (-ad, -mid, -pod, etc.) without requiring an exact -ad suffix. Twitch-
+        // prefixed so we don't re-introduce the PR #120 false-positive from bare
+        // 'stitched' substring match. The specific twitch-stitched-ad DATERANGE
+        // marker is a subset of this prefix.
+        scope.AdSignifiers = ['stitched-ad', 'EXT-X-CUE-OUT', 'twitch-stitched', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"'];
         scope.AdSegmentURLPatterns = ['/adsquared/', '/_404/', '/processing'];
         // Precompiled regexes shared across the stripAdSegments hot path. Declared
         // here (serialized into the worker blob with declareOptions) so literals
