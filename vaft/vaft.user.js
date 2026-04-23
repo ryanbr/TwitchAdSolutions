@@ -1071,6 +1071,12 @@
                                 if (!spat) {
                                     const errInfo = accessToken?.errors ? ' errors: ' + JSON.stringify(accessToken.errors).substring(0, 300) : '';
                                     console.log('[AD DEBUG] GQL response missing streamPlaybackAccessToken for ' + realPlayerType + '. Response keys: ' + JSON.stringify(Object.keys(accessToken || {})) + errInfo);
+                                    // Lockout for 15s so we don't re-hit this known-broken type every poll.
+                                    // Parity with the HTTP-error and exception paths above — this GQL-error path
+                                    // was the only failure mode that didn't mark FailedBackupPlayerTypes, causing
+                                    // ~34 identical retries per break on channels where embed/autoplay GQL
+                                    // consistently returns "server error" (field-observed on warn).
+                                    streamInfo.FailedBackupPlayerTypes.set(realPlayerType, Date.now());
                                     continue;
                                 }
                                 const urlInfo = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + streamInfo.ChannelName + '.m3u8' + streamInfo.UsherParams);
