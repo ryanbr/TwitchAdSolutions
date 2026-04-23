@@ -1318,13 +1318,19 @@
         const lsKeyQuality = 'video-quality';
         const lsKeyMuted = 'video-muted';
         const lsKeyVolume = 'volume';
+        const lsKeyLowLatency = 'lowLatencyModeEnabled';// Preserve user's low-latency toggle across reloads (TTV-AB parity)
+        const lsKeyPersistence = 'persistenceEnabled';// Preserve autoplay/persistence toggle across reloads (TTV-AB parity)
         let currentQualityLS = null;
         let currentMutedLS = null;
         let currentVolumeLS = null;
+        let currentLowLatencyLS = null;
+        let currentPersistenceLS = null;
         try {
             currentQualityLS = localStorage.getItem(lsKeyQuality);
             currentMutedLS = localStorage.getItem(lsKeyMuted);
             currentVolumeLS = localStorage.getItem(lsKeyVolume);
+            currentLowLatencyLS = localStorage.getItem(lsKeyLowLatency);
+            currentPersistenceLS = localStorage.getItem(lsKeyPersistence);
             if (localStorageHookFailed && player?.core?.state) {
                 localStorage.setItem(lsKeyMuted, JSON.stringify({default:player.core.state.muted}));
                 localStorage.setItem(lsKeyVolume, player.core.state.volume);
@@ -1349,6 +1355,12 @@
                     }
                     if (currentVolumeLS) {
                         localStorage.setItem(lsKeyVolume, currentVolumeLS);
+                    }
+                    if (currentLowLatencyLS !== null) {
+                        localStorage.setItem(lsKeyLowLatency, currentLowLatencyLS);
+                    }
+                    if (currentPersistenceLS !== null) {
+                        localStorage.setItem(lsKeyPersistence, currentPersistenceLS);
                     }
                     const videos = document.getElementsByTagName('video');
                     // Respect user's mute intent: only force-unmute if LS didn't say mute.
