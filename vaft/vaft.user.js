@@ -1045,6 +1045,28 @@
                     playerTypesToTry.unshift(streamInfo.PinnedBackupPlayerType);
                 }
             }
+            // Real-time contamination reorder: on poll 2+ of a break, move types that were
+            // already logged as ad-laden earlier in the same break to the end of iteration.
+            // Lets untried/clean types (typically autoplay on SSAI-heavy channels like warn)
+            // get tried first instead of re-checking types we already know are contaminated.
+            // LoggedBackupAdsByType is populated below at the "also has ads" log site and
+            // cleared at end-of-break, so this is per-break adaptive.
+            if (streamInfo.LoggedBackupAdsByType && streamInfo.LoggedBackupAdsByType.size > 0) {
+                const clean = [];
+                const contam = [];
+                for (const t of playerTypesToTry) {
+                    if (streamInfo.LoggedBackupAdsByType.has(t)) contam.push(t);
+                    else clean.push(t);
+                }
+                if (contam.length > 0 && clean.length > 0) {
+                    playerTypesToTry.length = 0;
+                    playerTypesToTry.push(...clean, ...contam);
+                    if (!streamInfo.LoggedContamReorderThisBreak) {
+                        streamInfo.LoggedContamReorderThisBreak = true;
+                        console.log('[AD DEBUG] Contamination-aware reorder — trying [' + clean.join(', ') + '] before known-contaminated [' + contam.join(', ') + ']');
+                    }
+                }
+            }
             for (let playerTypeIndex = startIndex; !backupM3u8 && playerTypeIndex < playerTypesToTry.length; playerTypeIndex++) {
                 const playerType = playerTypesToTry[playerTypeIndex];
                 const realPlayerType = playerType.replace('-CACHED', '');
@@ -1160,8 +1182,19 @@
                 }
             }
             if (!backupM3u8 && fallbackM3u8) {
-                backupPlayerType = FallbackPlayerType;
-                backupM3u8 = fallbackM3u8;
+                // Don't fall back to a type we've already marked contaminated this break.
+                // Without this guard, when all Source types go ad-laden mid-break the iteration
+                // ends with no clean commit AND fallbackM3u8 still pointing at FallbackPlayerType's
+                // ad-laden m3u8 — we'd silently re-commit the same contaminated site on every poll
+                // (no "Blocking ads" log because ActiveBackupPlayerType unchanged), and the user
+                // sees the full ad pod with no indication of failure. Better to leave backupM3u8
+                // null and let the "No ad-free backup stream found" log fire so it's visible.
+                if (streamInfo.LoggedBackupAdsByType && streamInfo.LoggedBackupAdsByType.has(FallbackPlayerType)) {
+                    console.log('[AD DEBUG] Skipping fallback to ' + FallbackPlayerType + ' — marked contaminated this break (' + [...streamInfo.LoggedBackupAdsByType].join(', ') + ' all ad-laden)');
+                } else {
+                    backupPlayerType = FallbackPlayerType;
+                    backupM3u8 = fallbackM3u8;
+                }
             }
             // Stale-commit guard: multiple processM3U8 calls can be in flight concurrently for
             // the same streamInfo (one per m3u8 poll). If this backup search started during the
@@ -1263,6 +1296,7 @@
                 streamInfo.RequestedAds.clear();
                 streamInfo.FailedBackupPlayerTypes.clear();
                 if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
+                streamInfo.LoggedContamReorderThisBreak = false;
                 streamInfo.CleanPlaylistCount = 0;
                 streamInfo.ConsecutiveAllStrippedPolls = 0;
                 streamInfo.EarlyReloadTriggered = false;
