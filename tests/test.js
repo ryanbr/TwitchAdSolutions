@@ -34,7 +34,9 @@ function assertDeepEq(actual, expected, message) {
 // ============================================================
 // Mock globals
 // ============================================================
-const AdSignifiers = ['stitched', 'stitched-ad', 'maf-ad', 'X-TV-TWITCH-AD', 'EXT-X-CUE-OUT', 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"', 'EXT-X-DATERANGE:CLASS="twitch-stream-source"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-ad-quartile"', 'SCTE35-OUT'];
+// Narrowed per PR #120 (remove false-positive substrings) + broadened per PR #166
+// (twitch-stitched prefix covers all twitch-stitched-* DATERANGE classes).
+const AdSignifiers = ['stitched-ad', 'EXT-X-CUE-OUT', 'twitch-stitched', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"'];
 const AdSegmentURLPatterns = ['/adsquared/', '/_404/', '/processing'];
 let AdSegmentCache = new Map();
 let AllSegmentsAreAdSegments = false;
@@ -56,6 +58,11 @@ function getMatchedAdSignifiers(textStr) {
 }
 
 function parseAttributes(str) {
+    if (!str) return {};
+    if (str.charCodeAt(0) === 35) { // '#'
+        const idx = str.indexOf(':');
+        if (idx !== -1) str = str.slice(idx + 1);
+    }
     return Object.fromEntries(
         str.split(/(?:^|,)((?:[^=]*)=(?:"[^"]*"|[^,]*))/)
         .filter(Boolean)
@@ -195,27 +202,32 @@ function isValidWorker(worker) {
 // ============================================================
 console.log('--- hasAdTags ---');
 assert(hasAdTags('stitched-ad-12345.ts') === true, 'detects stitched-ad');
-assert(hasAdTags('X-TV-TWITCH-AD-URL="http://example.com"') === true, 'detects X-TV-TWITCH-AD');
 assert(hasAdTags('#EXT-X-CUE-OUT:DURATION=30') === true, 'detects EXT-X-CUE-OUT');
-assert(hasAdTags('SCTE35-OUT') === true, 'detects SCTE35-OUT');
-assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-stitched-ad"') === true, 'detects EXT-X-DATERANGE');
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-stitched-ad"') === true, 'detects twitch-stitched-ad (via prefix + stitched-ad)');
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-maf-ad"') === true, 'detects twitch-maf-ad exact');
 assert(hasAdTags('normal-segment-12345.ts') === false, 'clean segment returns false');
 assert(hasAdTags('#EXTINF:2.000,live\nhttps://video.twitch.tv/segment.ts') === false, 'normal m3u8 returns false');
 assert(hasAdTags('') === false, 'empty string returns false');
+// Narrowed signifiers (removed per PR #120 to eliminate false positives): bare 'stitched', 'X-TV-TWITCH-AD', 'SCTE35-OUT'
+assert(hasAdTags('stitched') === false, 'bare stitched is narrowed out (PR #120 false-positive fix)');
+assert(hasAdTags('X-TV-TWITCH-AD-URL="http://example.com"') === false, 'X-TV-TWITCH-AD no longer a signifier');
+assert(hasAdTags('SCTE35-OUT') === false, 'SCTE35-OUT no longer a signifier');
 
 // ============================================================
 // Test: getMatchedAdSignifiers
 // ============================================================
 console.log('--- getMatchedAdSignifiers ---');
-assertDeepEq(getMatchedAdSignifiers('stitched-ad segment with X-TV-TWITCH-AD'), ['stitched', 'stitched-ad', 'X-TV-TWITCH-AD'], 'matches multiple signifiers');
+assertDeepEq(getMatchedAdSignifiers('stitched-ad with #EXT-X-CUE-OUT marker'), ['stitched-ad', 'EXT-X-CUE-OUT'], 'matches multiple signifiers');
 assertDeepEq(getMatchedAdSignifiers('#EXT-X-CUE-OUT:DURATION=30'), ['EXT-X-CUE-OUT'], 'matches single CUE-OUT');
 assertDeepEq(getMatchedAdSignifiers('normal content'), [], 'no matches on clean content');
-assertDeepEq(getMatchedAdSignifiers('SCTE35-OUT marker'), ['SCTE35-OUT'], 'matches SCTE35-OUT');
-assert(hasAdTags('maf-ad segment') === true, 'detects maf-ad');
-assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-stream-source"') === true, 'detects twitch-stream-source');
-assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-trigger"') === true, 'detects twitch-trigger');
-assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-maf-ad"') === true, 'detects twitch-maf-ad');
-assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-ad-quartile"') === true, 'detects twitch-ad-quartile');
+assertDeepEq(getMatchedAdSignifiers('#EXT-X-DATERANGE:CLASS="twitch-stitched-ad"'), ['stitched-ad', 'twitch-stitched'], 'twitch-stitched-ad hits both stitched-ad substring and twitch-stitched prefix');
+// PR #166 broadened coverage via twitch-stitched prefix (catches future variants like twitch-stitched-mid, twitch-stitched-pod).
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-stitched-mid"') === true, 'detects twitch-stitched-mid via prefix');
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-stitched-pod"') === true, 'detects twitch-stitched-pod via prefix');
+// Narrowed DATERANGE classes (no longer individually listed — not covered by twitch-stitched prefix either)
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-stream-source"') === false, 'twitch-stream-source not a signifier');
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-trigger"') === false, 'twitch-trigger not a signifier');
+assert(hasAdTags('#EXT-X-DATERANGE:CLASS="twitch-ad-quartile"') === false, 'twitch-ad-quartile not a signifier');
 
 // ============================================================
 // Test: parseAttributes
@@ -535,12 +547,10 @@ assert(AdSegmentCache.has('new-segment.ts'), 'keeps recent segments');
 // Test: hasAdTags — each signifier individually
 // ============================================================
 console.log('--- hasAdTags (individual signifiers) ---');
-assert(hasAdTags('stitched') === true, 'detects stitched alone');
 assert(hasAdTags('stitched-ad') === true, 'detects stitched-ad alone');
-assert(hasAdTags('X-TV-TWITCH-AD') === true, 'detects X-TV-TWITCH-AD alone');
 assert(hasAdTags('EXT-X-CUE-OUT') === true, 'detects EXT-X-CUE-OUT alone');
-assert(hasAdTags('EXT-X-DATERANGE:CLASS="twitch-stitched-ad"') === true, 'detects EXT-X-DATERANGE alone');
-assert(hasAdTags('SCTE35-OUT') === true, 'detects SCTE35-OUT alone');
+assert(hasAdTags('twitch-stitched') === true, 'detects twitch-stitched prefix alone');
+assert(hasAdTags('EXT-X-DATERANGE:CLASS="twitch-maf-ad"') === true, 'detects twitch-maf-ad DATERANGE alone');
 
 // ============================================================
 // Test: getStreamUrlForResolution — edge cases
