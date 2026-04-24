@@ -1221,7 +1221,12 @@ twitch-videoad.js text/javascript
                     if (streamInfo.ConsecutiveZeroStripBreaks >= 3) {
                         console.log('[AD DEBUG] Warning: ' + streamInfo.ConsecutiveZeroStripBreaks + ' consecutive unconfirmed ad breaks with 0 segments stripped — possible false positive from ad signifiers');
                     }
-                } else if (hadStrippedSegments) {
+                } else if (hadStrippedSegments || streamInfo.HasConfirmedAdAttrs) {
+                    // Reset is symmetric with the increment guard above — any positive "break
+                    // was handled cleanly" signal resets the false-positive history. Previously
+                    // only stripped>0 reset the counter, which let stale suspicious history
+                    // bleed across legitimately-handled backup-swap breaks (0 stripped + real
+                    // ad attrs) and trigger the warning on partially-stale state.
                     streamInfo.ConsecutiveZeroStripBreaks = 0;
                 }
                 streamInfo.IsShowingAd = false;
