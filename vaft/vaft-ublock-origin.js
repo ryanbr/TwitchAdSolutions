@@ -1555,7 +1555,12 @@ twitch-videoad.js text/javascript
                         }
                         // Detect position jump (native gap recovery) — drift to catch up
                         // Skip during ad breaks and 10s after: backup stream switching causes buffer gaps that trigger false jumps
-                        if (playerBufferState.position > 0 && position - playerBufferState.position > 5 && !playerBufferState.inAdBreak && (!playerBufferState.lastBackupSwitchAt || Date.now() - playerBufferState.lastBackupSwitchAt >= 10000)) {
+                        // Also skip 15s after a player reload: hard reloads jump the player to live edge,
+                        // which our previous-position tracking sees as a ~60s "drift" that doesn't need
+                        // catch-up — we ARE at live edge now. Field-observed on warn (release v58):
+                        // post-ad reload + ~60s position jump every break, drift correction firing
+                        // unnecessarily for the rest of the inter-break period.
+                        if (playerBufferState.position > 0 && position - playerBufferState.position > 5 && !playerBufferState.inAdBreak && (!playerBufferState.lastBackupSwitchAt || Date.now() - playerBufferState.lastBackupSwitchAt >= 10000) && (!playerBufferState.lastReloadAt || Date.now() - playerBufferState.lastReloadAt >= 15000)) {
                             console.log('[AD DEBUG] Position jumped ' + (position - playerBufferState.position).toFixed(1) + 's — starting drift correction');
                             startDriftCorrection(player.getHTMLVideoElement?.());
                         }
