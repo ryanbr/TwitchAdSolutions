@@ -1200,8 +1200,13 @@ twitch-videoad.js text/javascript
             streamInfo.CleanPlaylistCount++;
             // Check if the current playlist has live segments — if not, backup stream is dead
             const hasLiveSegments = textStr.includes(',live');
-            const cleanThreshold = streamInfo.NumStrippedAdSegments === 0 ? 1 : 2;
-            if (streamInfo.CleanPlaylistCount >= cleanThreshold || !hasLiveSegments) {
+            // Require 2 consecutive clean polls before declaring ad-end. Previously only 1
+            // when NumStrippedAdSegments === 0 (CSAI-only / backup-swap path), which let
+            // brief clean windows during ongoing breaks flip IsShowingAd false prematurely on
+            // SSAI-uniform channels. TTV-AB v6.4.8 made the equivalent change for the same
+            // reason — Twitch can serve a clean playlist mid-break before re-injecting markers.
+            // Testing variants already used unconditional 2; this aligns release.
+            if (streamInfo.CleanPlaylistCount >= 2 || !hasLiveSegments) {
                 if (!hasLiveSegments) {
                     console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
                 }
