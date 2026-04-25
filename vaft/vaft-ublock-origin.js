@@ -1553,11 +1553,19 @@ twitch-videoad.js text/javascript
                             playerBufferState.fixAttempts = 0;
                             playerBufferState.recoveryReloadUsed = false;
                         }
-                        // Detect position jump (native gap recovery) — drift to catch up
-                        // Skip during ad breaks and 10s after: backup stream switching causes buffer gaps that trigger false jumps
-                        if (playerBufferState.position > 0 && position - playerBufferState.position > 5 && !playerBufferState.inAdBreak && (!playerBufferState.lastBackupSwitchAt || Date.now() - playerBufferState.lastBackupSwitchAt >= 10000)) {
+                        // Detect position jump (native gap recovery) — drift to catch up.
+                        // Skip during ad breaks and 10s after: backup stream switching causes buffer gaps that trigger false jumps.
+                        // Rate-limit to once per 30s: field-observed on warn that Twitch's player.core.state.position
+                        // jumps ~60s every ~12s on reload-heavy channels (likely batch updates from m3u8 manifest
+                        // refreshes / program-date-time sync points, not real drift). Our 1.1x videoElement.playbackRate
+                        // doesn't affect state.position anyway, so re-firing every 12s is useless log spam — the catch-up
+                        // operates on currentTime which is already at live edge. Rate-limit collapses the spam to a
+                        // single drift attempt per 30s window, leaving real-drift paths (buffer-gap seek, post-reload)
+                        // unaffected since they call startDriftCorrection() directly without going through this detector.
+                        if (playerBufferState.position > 0 && position - playerBufferState.position > 5 && !playerBufferState.inAdBreak && (!playerBufferState.lastBackupSwitchAt || Date.now() - playerBufferState.lastBackupSwitchAt >= 10000) && (!playerBufferState.lastDriftStartedAt || Date.now() - playerBufferState.lastDriftStartedAt >= 30000)) {
                             console.log('[AD DEBUG] Position jumped ' + (position - playerBufferState.position).toFixed(1) + 's — starting drift correction');
                             startDriftCorrection(player.getHTMLVideoElement?.());
+                            playerBufferState.lastDriftStartedAt = Date.now();
                         }
                         playerBufferState.position = position;
                         playerBufferState.bufferedPosition = bufferedPosition;
