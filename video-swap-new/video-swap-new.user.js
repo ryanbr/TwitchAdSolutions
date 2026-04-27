@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (video-swap-new)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      1.79
+// @version      1.80
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @description  Multiple solutions for blocking Twitch ads (video-swap-new)
@@ -34,8 +34,20 @@
             return;
         }
     }
+    // Skip injection on the Twitch clip editor — clips.twitch.tv host or /<channel>/clip/<slug> path.
+    // Our fetch/Worker hooks and buffer monitor are aimed at the live channel player; on the
+    // clip editor's seekable preview they have no ads to act on and have caused the preview
+    // to freeze when the user drags the trim range. (Sync'd with TTV-AB v6.4.9.)
+    {
+        const _clipHost = document.location.hostname;
+        const _clipPath = document.location.pathname || '';
+        if (_clipHost === 'clips.twitch.tv' || /^\/[^/]+\/clip\/[^/]+/.test(_clipPath)) {
+            console.log('[AD DEBUG] video-swap-new skipped — clip editor page (' + _clipHost + _clipPath + ').');
+            return;
+        }
+    }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 47;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 48;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: video-swap-new v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -1378,62 +1390,25 @@
         if (document.getElementById('seventv-extension')) {
             console.log('[AD DEBUG] Warning: 7TV extension detected — may cause black screen or buffering issues. If you experience problems, try disabling 7TV.');
         }
-        // This stops Twitch from pausing the player when in another tab and an ad shows.
-        // Taken from https://github.com/saucettv/VideoAdBlockForTwitch/blob/cefce9d2b565769c77e3666ac8234c3acfe20d83/chrome/content.js#L30
-        try {
-            Object.defineProperty(document, 'visibilityState', {
-                get() {
-                    return 'visible';
-                }
-            });
-        }catch{}
-        let hidden = document.__lookupGetter__('hidden');
-        let webkitHidden = document.__lookupGetter__('webkitHidden');
-        try {
-            Object.defineProperty(document, 'hidden', {
-                get() {
-                    return false;
-                }
-            });
-        }catch{}
-        const block = e => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-        };
+        // Resume the player on tab focus if Twitch paused it during an ad on a hidden tab.
+        // Previously also spoofed document.hidden / visibilityState / hasFocus / mozHidden /
+        // webkitHidden and swallowed the events on the capture phase. That broke other
+        // extensions that key off real visibility (e.g. BetterTTV "Mute Invisible Player").
+        // Resume-on-focus alone is enough to keep playback alive across hidden→visible
+        // transitions during ads. Sync'd with TTV-AB v6.5.0.
         let wasVideoPlaying = true;
-        const visibilityChange = e => {
-            if (typeof chrome !== 'undefined') {
-                const videos = document.getElementsByTagName('video');
-                if (videos.length > 0) {
-                    if (hidden.apply(document) === true || (webkitHidden && webkitHidden.apply(document) === true)) {
-                        wasVideoPlaying = !videos[0].paused && !videos[0].ended;
-                    } else if (wasVideoPlaying && !videos[0].ended && videos[0].paused) {
-                        videos[0].play()?.catch?.(() => {});
-                    }
-                }
+        const visibilityChange = () => {
+            const videos = document.getElementsByTagName('video');
+            if (videos.length === 0) return;
+            if (document.hidden) {
+                wasVideoPlaying = !videos[0].paused && !videos[0].ended;
+                return;
             }
-            block(e);
+            if (wasVideoPlaying && !videos[0].ended && videos[0].paused) {
+                videos[0].play()?.catch?.(() => {});
+            }
         };
-        document.addEventListener('visibilitychange', visibilityChange, true);
-        document.addEventListener('webkitvisibilitychange', visibilityChange, true);
-        document.addEventListener('mozvisibilitychange', visibilityChange, true);
-        document.addEventListener('hasFocus', block, true);
-        try {
-            if (/Firefox/.test(navigator.userAgent)) {
-                Object.defineProperty(document, 'mozHidden', {
-                    get() {
-                        return false;
-                    }
-                });
-            } else {
-                Object.defineProperty(document, 'webkitHidden', {
-                    get() {
-                        return false;
-                    }
-                });
-            }
-        }catch{}
+        document.addEventListener('visibilitychange', visibilityChange);
         // Hooks for preserving volume / resolution
         try {
             const keysToCache = [
