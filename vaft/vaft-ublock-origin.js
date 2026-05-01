@@ -1263,6 +1263,14 @@ twitch-videoad.js text/javascript
                 streamInfo.ActiveBackupPlayerType = null;
                 streamInfo.RequestedAds.clear();
                 streamInfo.FailedBackupPlayerTypes.clear();
+                // Clear pin if the pinned type was contaminated this break — avoids wasted
+                // first-try fetch on next break. Field-observed on pge4: PinnedBackupPlayerType
+                // gets set to the last-committed type via PinBackupPlayerType=true, but when
+                // that type went contaminated mid-break we'd still try it first next break.
+                if (streamInfo.PinnedBackupPlayerType && streamInfo.LoggedBackupAdsByType && streamInfo.LoggedBackupAdsByType.has(streamInfo.PinnedBackupPlayerType)) {
+                    console.log('[AD DEBUG] Clearing pinned backup type ' + streamInfo.PinnedBackupPlayerType + ' — contaminated this break, would waste first-try next break');
+                    streamInfo.PinnedBackupPlayerType = null;
+                }
                 if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
                 streamInfo.LoggedContamReorderThisBreak = false;
                 streamInfo.CleanPlaylistCount = 0;
