@@ -91,6 +91,8 @@ twitch-videoad.js text/javascript
             RecoverySegments: [],
             RecoveryStartSeq: undefined,
             CleanPlaylistCount: 0,
+            PendingAdEndAt: 0,
+            AdEndBounceCount: 0,
             ConsecutiveZeroStripBreaks: 0,
             UseFallbackStream: false,
             LastCleanNativeM3U8: null,
@@ -754,10 +756,24 @@ twitch-videoad.js text/javascript
                 const streamM3u8 = await streamM3u8Response.text();
                 if (streamM3u8 != null) {
                     if (!hasAdTags(streamM3u8) && SimulatedAdsDepth == 0) {
+                        // Mirrors TTV-AB v6.6.7 #1: mark first candidate-end timestamp on the first
+                        // clean main-stream poll, so the slow-path max-wait gate below can fire even
+                        // if subsequent polls bounce back to ad-marked.
+                        if (!streamInfo.PendingAdEndAt) {
+                            streamInfo.PendingAdEndAt = Date.now();
+                        }
                         streamInfo.CleanPlaylistCount++;
                         // Check if the current playlist has live segments — if not, backup stream is dead
                         const hasLiveSegments = textStr.includes(LIVE_SIGNIFIER);
-                        if (streamInfo.CleanPlaylistCount >= 2 || !hasLiveSegments) {
+                        // Mirrors TTV-AB v6.6.7 #4: independent slow-path max-wait escalation gate so
+                        // bouncing markers can't wedge the player on backup indefinitely.
+                        const adEndMaxWaitMs = 12000;
+                        const elapsedSinceCandidate = Date.now() - streamInfo.PendingAdEndAt;
+                        const slowPathReady = streamInfo.PendingAdEndAt > 0 && elapsedSinceCandidate >= adEndMaxWaitMs;
+                        if (streamInfo.CleanPlaylistCount >= 2 || !hasLiveSegments || slowPathReady) {
+                            if (slowPathReady && streamInfo.CleanPlaylistCount < 2) {
+                                console.log('[AD DEBUG] Slow-path ad-end escalation — ' + (streamInfo.AdEndBounceCount || 0) + ' marker bounces, ' + (elapsedSinceCandidate / 1000).toFixed(1) + 's since first clean poll');
+                            }
                             if (!hasLiveSegments) {
                                 console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
                             }
@@ -777,17 +793,29 @@ twitch-videoad.js text/javascript
                             streamInfo.HasLoggedCsaiFastPath = false;
                             streamInfo.HasLoggedAdAttributes = false;
                             streamInfo.HasLoggedUnknownSignifiers = false;
-                            streamInfo.RequestedAds.clear();
+                            streamInfo.RequestedAds?.clear?.();
                             streamInfo.ConsecutiveAllStrippedPolls = 0;
                             streamInfo.EarlyReloadTriggered = false;
                             streamInfo.IsMovingOffBackupEncodings = true;
                             streamInfo.BackupEncodings = null;
-                            streamInfo.BackupEncodingsStatus.clear();
+                            streamInfo.BackupEncodingsStatus?.clear?.();
                             streamInfo.BackupEncodingsPlayerTypeIndex = -1;
                             streamInfo.CleanPlaylistCount = 0;
+                            streamInfo.PendingAdEndAt = 0;
+                            streamInfo.AdEndBounceCount = 0;
                             postMessage({key: ReloadPlayerAfterAd ? 'UboReloadPlayer' : 'UboPauseResumePlayer'});
                         }
                     } else {
+                        // Mirrors TTV-AB v6.6.7 #1: bounce-tolerant reset keeps PendingAdEndAt alive
+                        // across short flips back to ad-marked, so the slow-path max-wait gate can
+                        // still fire when bouncing markers prevent CleanPlaylistCount progress.
+                        const adEndStalenessMs = 12000;
+                        if (streamInfo.PendingAdEndAt && (Date.now() - streamInfo.PendingAdEndAt) < adEndStalenessMs) {
+                            streamInfo.AdEndBounceCount = (streamInfo.AdEndBounceCount || 0) + 1;
+                        } else {
+                            streamInfo.PendingAdEndAt = 0;
+                            streamInfo.AdEndBounceCount = 0;
+                        }
                         streamInfo.CleanPlaylistCount = 0;
                         if (!streamM3u8.includes('"MIDROLL"') && !streamM3u8.includes('"midroll"')) {
                             const lines = streamM3u8.split(/\r?\n/);

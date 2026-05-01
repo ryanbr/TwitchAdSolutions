@@ -148,6 +148,8 @@
             PodLength: 1,
             HasConfirmedAdAttrs: false,
             CleanPlaylistCount: 0,
+            PendingAdEndAt: 0,// Timestamp of first clean poll seen this break — drives the bounce-tolerant max-wait escalation gate (TTV-AB v6.6.7 #1/#4)
+            AdEndBounceCount: 0,// Count of ad-marker bounces while PendingAdEndAt is alive — telemetry only
             ConsecutiveZeroStripBreaks: 0,
             CsaiOnlyThisBreak: false,
             // Strip state
@@ -875,6 +877,16 @@
             streamInfo.LastCleanNativePlaylistAt = Date.now();
         }
         if (haveAdTags) {
+            // Bounce-tolerant reset: keep PendingAdEndAt alive across short flips back to ad-marked
+            // so the slow-path max-wait gate can still fire when bouncing markers prevent
+            // CleanPlaylistCount from reaching threshold. Mirrors TTV-AB v6.6.7 #1.
+            const adEndStalenessMs = 12000;
+            if (streamInfo.PendingAdEndAt && (Date.now() - streamInfo.PendingAdEndAt) < adEndStalenessMs) {
+                streamInfo.AdEndBounceCount = (streamInfo.AdEndBounceCount || 0) + 1;
+            } else {
+                streamInfo.PendingAdEndAt = 0;
+                streamInfo.AdEndBounceCount = 0;
+            }
             streamInfo.CleanPlaylistCount = 0;
             streamInfo.IsMidroll = textStr.includes('"MIDROLL"') || textStr.includes('"midroll"');
             if (!streamInfo.IsShowingAd) {
@@ -1273,9 +1285,24 @@
                 postMessage({ key: 'ReloadPlayer', kind: 'early' });
             }
         } else if (streamInfo.IsShowingAd) {
+            // Mark first candidate-end timestamp on the first clean poll seen this break,
+            // so the slow-path max-wait gate below can fire even if subsequent polls bounce
+            // back to ad-marked. The bounce-tolerant haveAdTags reset keeps this alive
+            // across short flips. Mirrors TTV-AB v6.6.7 #1.
+            if (!streamInfo.PendingAdEndAt) {
+                streamInfo.PendingAdEndAt = Date.now();
+            }
             streamInfo.CleanPlaylistCount++;
             // Check if the current playlist has live segments — if not, backup stream is dead
             const hasLiveSegments = textStr.includes(',live');
+            // Independent slow-path max-wait escalation — ends the visible ad cycle even when
+            // marker bouncing keeps CleanPlaylistCount below threshold. Without this, the player
+            // could be wedged on backup indefinitely on channels where Twitch flips markers
+            // in/out faster than 3 consecutive clean polls can land. Mirrors TTV-AB v6.6.7 #4
+            // ("Decoupled Slow-Path Recovery from Clean-Count").
+            const adEndMaxWaitMs = 12000;
+            const elapsedSinceCandidate = Date.now() - streamInfo.PendingAdEndAt;
+            const slowPathReady = streamInfo.PendingAdEndAt > 0 && elapsedSinceCandidate >= adEndMaxWaitMs;
             // Require 3 consecutive clean polls before declaring ad-end. Previously only 1
             // when NumStrippedAdSegments === 0 (CSAI-only / backup-swap path) and 2 otherwise,
             // which let brief clean windows during ongoing breaks flip IsShowingAd false
@@ -1283,7 +1310,10 @@
             // probes and bumped to 3 in v6.6.7 ("Ad-End Re-Entry Stability") — Twitch can
             // serve a clean playlist mid-break before re-injecting markers, and 2 polls
             // (~4s) wasn't always enough to ride out the bounce.
-            if (streamInfo.CleanPlaylistCount >= 3 || !hasLiveSegments) {
+            if (streamInfo.CleanPlaylistCount >= 3 || !hasLiveSegments || slowPathReady) {
+                if (slowPathReady && streamInfo.CleanPlaylistCount < 3) {
+                    console.log('[AD DEBUG] Slow-path ad-end escalation — ' + (streamInfo.AdEndBounceCount || 0) + ' marker bounces, ' + (elapsedSinceCandidate / 1000).toFixed(1) + 's since first clean poll');
+                }
                 if (!hasLiveSegments) {
                     console.log('[AD DEBUG] Backup stream has no live segments — forcing immediate reload');
                 }
@@ -1315,11 +1345,13 @@
                 streamInfo.IsStrippingAdSegments = false;
                 streamInfo.NumStrippedAdSegments = 0;
                 streamInfo.ActiveBackupPlayerType = null;
-                streamInfo.RequestedAds.clear();
-                streamInfo.FailedBackupPlayerTypes.clear();
+                streamInfo.RequestedAds?.clear?.();
+                streamInfo.FailedBackupPlayerTypes?.clear?.();
                 if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
                 streamInfo.LoggedContamReorderThisBreak = false;
                 streamInfo.CleanPlaylistCount = 0;
+                streamInfo.PendingAdEndAt = 0;
+                streamInfo.AdEndBounceCount = 0;
                 streamInfo.ConsecutiveAllStrippedPolls = 0;
                 streamInfo.EarlyReloadTriggered = false;
                 streamInfo.EarlyReloadAwaitingResult = false;
