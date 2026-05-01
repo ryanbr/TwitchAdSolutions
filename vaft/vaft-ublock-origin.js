@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 66;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 67;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -798,12 +798,18 @@ twitch-videoad.js text/javascript
                     map.delete(key);
                 }
             });
-            // Diagnostic: log once per streamInfo when the cache crosses 1000 entries,
-            // so cache bloat from a future TTL/prune bug would surface in user reports
-            // instead of staying invisible.
-            if (AdSegmentCache.size > 1000 && !streamInfo.LoggedAdCacheSize1k) {
-                streamInfo.LoggedAdCacheSize1k = true;
-                console.log('[AD DEBUG] AdSegmentCache crossed 1000 entries (now ' + AdSegmentCache.size + ') — possible cache bloat');
+            // Bound the cache to prevent unbounded growth on long sessions. When size > 1000,
+            // evict the oldest 200 entries (Map iteration order is insertion order, so FIFO).
+            if (AdSegmentCache.size > 1000) {
+                let evicted = 0;
+                for (const url of AdSegmentCache.keys()) {
+                    AdSegmentCache.delete(url);
+                    if (++evicted >= 200) break;
+                }
+                if (!streamInfo.LoggedAdCacheSize1k) {
+                    streamInfo.LoggedAdCacheSize1k = true;
+                    console.log('[AD DEBUG] AdSegmentCache exceeded 1000 entries — evicted oldest ' + evicted + ' (now ' + AdSegmentCache.size + ')');
+                }
             }
         }
         return lines.join('\n');
@@ -938,7 +944,12 @@ twitch-videoad.js text/javascript
                 return stripAdSegments(textStr, false, streamInfo);
             }
             const isHevc = currentResolution.Codecs.startsWith('hev') || currentResolution.Codecs.startsWith('hvc');
-            if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && streamInfo.ModifiedM3U8 && !streamInfo.IsUsingModifiedM3U8) {
+            // Post-ad reload-loop guard: skip the HEVC reload if a player reload already
+            // fired within the last 8s. End-of-break clears IsUsingModifiedM3U8; without
+            // this guard, post-ad continuation markers would re-fire the reload.
+            const postAdReentryGuardMs = 8000;
+            const recentlyReloaded = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < postAdReentryGuardMs;
+            if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && streamInfo.ModifiedM3U8 && !streamInfo.IsUsingModifiedM3U8 && !recentlyReloaded) {
                 streamInfo.IsUsingModifiedM3U8 = true;
                 streamInfo.LastPlayerReload = Date.now();
                 postMessage({

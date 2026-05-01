@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      64.5.0
+// @version      64.6.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 66;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 67;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -830,12 +830,22 @@
                     map.delete(key);
                 }
             });
-            // Diagnostic: log once per streamInfo when the cache crosses 1000 entries,
-            // so cache bloat from a future TTL/prune bug would surface in user reports
-            // instead of staying invisible.
-            if (AdSegmentCache.size > 1000 && !streamInfo.LoggedAdCacheSize1k) {
-                streamInfo.LoggedAdCacheSize1k = true;
-                console.log('[AD DEBUG] AdSegmentCache crossed 1000 entries (now ' + AdSegmentCache.size + ') — possible cache bloat');
+            // Bound the cache to prevent unbounded growth on long sessions. Each entry is
+            // a URL string + Date.now() timestamp (~200-300 bytes); over a multi-hour session
+            // with frequent ad breaks, the Map can reach MB-scale. When size > 1000, evict
+            // the oldest 200 entries (Map iteration order is insertion order, so FIFO).
+            // Old ad URLs are unlikely to be requested again; if they are, they'll be
+            // re-cached via the strip path normally.
+            if (AdSegmentCache.size > 1000) {
+                let evicted = 0;
+                for (const url of AdSegmentCache.keys()) {
+                    AdSegmentCache.delete(url);
+                    if (++evicted >= 200) break;
+                }
+                if (!streamInfo.LoggedAdCacheSize1k) {
+                    streamInfo.LoggedAdCacheSize1k = true;
+                    console.log('[AD DEBUG] AdSegmentCache exceeded 1000 entries — evicted oldest ' + evicted + ' (now ' + AdSegmentCache.size + ')');
+                }
             }
         }
         return lines.join('\n');
@@ -970,7 +980,15 @@
                 return stripAdSegments(textStr, false, streamInfo);
             }
             const isHevc = currentResolution.Codecs.startsWith('hev') || currentResolution.Codecs.startsWith('hvc');
-            if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && streamInfo.ModifiedM3U8 && !streamInfo.IsUsingModifiedM3U8) {
+            // Post-ad reload-loop guard: at end of break, IsUsingModifiedM3U8 is reset to false.
+            // If post-ad continuation markers arrive within ~8s, the next ad-detect fires the
+            // HEVC reload AGAIN because the !IsUsingModifiedM3U8 condition is satisfied — causing
+            // a redundant player teardown/rebuild cycle ~seconds after the previous reload
+            // already settled. Skip the reload if we just reloaded recently; the backup-stream
+            // path will handle this break instead.
+            const postAdReentryGuardMs = 8000;
+            const recentlyReloaded = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < postAdReentryGuardMs;
+            if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && streamInfo.ModifiedM3U8 && !streamInfo.IsUsingModifiedM3U8 && !recentlyReloaded) {
                 streamInfo.IsUsingModifiedM3U8 = true;
                 streamInfo.LastPlayerReload = Date.now();
                 postMessage({
