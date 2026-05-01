@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 59;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 60;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -518,6 +518,11 @@ twitch-videoad.js text/javascript
                                                     Resolution: resolution,
                                                     FrameRate: attributes['FRAME-RATE'],
                                                     Codecs: attributes['CODECS'],
+                                                    // AUDIO/VIDEO/SUBTITLES groups copied onto the rewritten STREAM-INF line
+                                                    // during HEVC→AVC fallback (TTV-AB v6.7.5 parser fix).
+                                                    Audio: attributes['AUDIO'] || '',
+                                                    Video: attributes['VIDEO'] || '',
+                                                    Subtitles: attributes['SUBTITLES'] || '',
                                                     Url: lines[i + 1]
                                                 };
                                                 streamInfo.Urls[lines[i + 1]] = resolutionInfo;
@@ -531,6 +536,13 @@ twitch-videoad.js text/javascript
                                     }
                                     const nonHevcResolutionList = streamInfo.ResolutionList.filter((element) => element.Codecs.startsWith('avc') || element.Codecs.startsWith('av0'));
                                     if (AlwaysReloadPlayerOnAd || (nonHevcResolutionList.length > 0 && streamInfo.ResolutionList.some((element) => element.Codecs.startsWith('hev') || element.Codecs.startsWith('hvc')) && !SkipPlayerReloadOnHevc)) {
+                                        const replaceOrAppendStreamInfAttr = (line, key, value) => {
+                                            if (typeof value !== 'string' || !value) return line;
+                                            const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                                            const next = key + '="' + escaped + '"';
+                                            const pattern = new RegExp('(^|,)' + key + '=("[^"]*"|[^,]*)');
+                                            return pattern.test(line) ? line.replace(pattern, '$1' + next) : line + ',' + next;
+                                        };
                                         if (nonHevcResolutionList.length > 0) {
                                             for (let i = 0; i < lines.length - 1; i++) {
                                                 if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
@@ -553,6 +565,10 @@ twitch-videoad.js text/javascript
                                                         }
                                                         console.log('ModifiedM3U8 swap ' + resSettings[codecsKey] + ' to ' + newResolutionInfo.Codecs + ' oldRes:' + oldResolution + ' newRes:' + newResolutionInfo.Resolution);
                                                         lines[i] = lines[i].replace(/CODECS="[^"]+"/, `CODECS="${newResolutionInfo.Codecs}"`);
+                                                        // Copy AUDIO/VIDEO/SUBTITLES groups (TTV-AB v6.7.5 parser fix).
+                                                        lines[i] = replaceOrAppendStreamInfAttr(lines[i], 'AUDIO', newResolutionInfo.Audio);
+                                                        lines[i] = replaceOrAppendStreamInfAttr(lines[i], 'VIDEO', newResolutionInfo.Video);
+                                                        lines[i] = replaceOrAppendStreamInfAttr(lines[i], 'SUBTITLES', newResolutionInfo.Subtitles);
                                                         lines[i + 1] = newResolutionInfo.Url + ' '.repeat(i + 1);// The stream doesn't load unless each url line is unique
                                                     }
                                                 }
