@@ -1299,28 +1299,20 @@ twitch-videoad.js text/javascript
             console.log('[AD DEBUG] Downgraded reload to pause/play to preserve PiP');
             return;
         }
-        const lsKeyQuality = 'video-quality';
-        const lsKeyMuted = 'video-muted';
-        const lsKeyVolume = 'volume';
-        const lsKeyLowLatency = 'lowLatencyModeEnabled';// Preserve user's low-latency toggle across reloads (TTV-AB parity)
-        const lsKeyPersistence = 'persistenceEnabled';// Preserve autoplay/persistence toggle across reloads (TTV-AB parity)
-        let currentQualityLS = null;
-        let currentMutedLS = null;
-        let currentVolumeLS = null;
-        let currentLowLatencyLS = null;
-        let currentPersistenceLS = null;
+        // Snapshot player preference LS keys before reload; restored in setTimeout below.
+        // Mirrors TTV-AB's _PLAYER_PREFERENCE_KEYS coverage.
+        const PRESERVED_LS_KEYS = ['video-quality', 'video-muted', 'volume', 'lowLatencyModeEnabled', 'persistenceEnabled'];
+        const lsSnapshot = {};
         try {
-            currentQualityLS = localStorage.getItem(lsKeyQuality);
-            currentMutedLS = localStorage.getItem(lsKeyMuted);
-            currentVolumeLS = localStorage.getItem(lsKeyVolume);
-            currentLowLatencyLS = localStorage.getItem(lsKeyLowLatency);
-            currentPersistenceLS = localStorage.getItem(lsKeyPersistence);
+            for (const k of PRESERVED_LS_KEYS) {
+                lsSnapshot[k] = localStorage.getItem(k);
+            }
             if (localStorageHookFailed && player?.core?.state) {
-                localStorage.setItem(lsKeyMuted, JSON.stringify({default:player.core.state.muted}));
-                localStorage.setItem(lsKeyVolume, player.core.state.volume);
+                localStorage.setItem('video-muted', JSON.stringify({default:player.core.state.muted}));
+                localStorage.setItem('volume', player.core.state.volume);
             }
             if (player?.core?.state?.quality?.group) {
-                localStorage.setItem(lsKeyQuality, JSON.stringify({default:player.core.state.quality.group}));
+                localStorage.setItem('video-quality', JSON.stringify({default:player.core.state.quality.group}));
             }
         } catch {}
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
@@ -1331,26 +1323,16 @@ twitch-videoad.js text/javascript
         {
             setTimeout(() => {
                 try {
-                    if (currentQualityLS) {
-                        localStorage.setItem(lsKeyQuality, currentQualityLS);
-                    }
-                    if (currentMutedLS) {
-                        localStorage.setItem(lsKeyMuted, currentMutedLS);
-                    }
-                    if (currentVolumeLS) {
-                        localStorage.setItem(lsKeyVolume, currentVolumeLS);
-                    }
-                    if (currentLowLatencyLS !== null) {
-                        localStorage.setItem(lsKeyLowLatency, currentLowLatencyLS);
-                    }
-                    if (currentPersistenceLS !== null) {
-                        localStorage.setItem(lsKeyPersistence, currentPersistenceLS);
+                    for (const [k, v] of Object.entries(lsSnapshot)) {
+                        if (v !== null) {
+                            localStorage.setItem(k, v);
+                        }
                     }
                     const videos = document.getElementsByTagName('video');
                     // Respect user's mute intent: only force-unmute if LS didn't say mute.
                     // Twitch writes video-muted as '{"default":true}' when user muted via UI;
                     // Chrome autoplay policy can mute even if user didn't (no LS signal).
-                    const userIntendedMute = currentMutedLS && currentMutedLS.includes('"default":true');
+                    const userIntendedMute = lsSnapshot['video-muted']?.includes('"default":true');
                     if (videos.length > 0 && videos[0].muted && !userIntendedMute) {
                         videos[0].muted = false;
                     }
