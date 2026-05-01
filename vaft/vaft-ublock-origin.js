@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 61;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 62;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -2004,6 +2004,19 @@ twitch-videoad.js text/javascript
             // Soft reload for 'post-ad' (smooth transition, no black screen teardown).
             const hardReload = reloadKind === 'early';
             console.log('Reloading Twitch player' + (hardReload ? ' (hard)' : ' (soft)'));
+            // Pre-mute through hard reload to hide MSE-teardown audio click; restored on
+            // `canplay` with 1500ms safety cap. Skipped if user already muted.
+            if (hardReload) {
+                try {
+                    const v = document.querySelector('video');
+                    if (v && !v.muted) {
+                        v.muted = true;
+                        const restore = () => { try { document.querySelector('video').muted = false; } catch {} };
+                        v.addEventListener('canplay', restore, { once: true });
+                        setTimeout(restore, 1500);
+                    }
+                } catch {}
+            }
             playerState.setSrc({ isNewMediaPlayerInstance: hardReload, refreshAccessToken: hardReload });
             postTwitchWorkerMessage('TriggeredPlayerReload');
             player.play()?.catch?.(() => {});

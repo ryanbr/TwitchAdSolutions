@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      64.0.0
+// @version      64.1.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 61;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 62;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -2048,6 +2048,22 @@
             // Soft reload for 'post-ad' (smooth transition, no black screen teardown).
             const hardReload = reloadKind === 'early';
             console.log('Reloading Twitch player' + (hardReload ? ' (hard)' : ' (soft)'));
+            // Pre-mute through hard reload to hide the MediaSource-teardown audio click.
+            // New MSE initialization crosses a discontinuity boundary that produces an
+            // audible pop on first frames. Restored on `canplay` (audio decodable) with a
+            // 1500ms safety cap. Skipped if user was already muted (preserves intent).
+            // Existing 3000ms LS-restore timer below acts as ultimate backstop.
+            if (hardReload) {
+                try {
+                    const v = document.querySelector('video');
+                    if (v && !v.muted) {
+                        v.muted = true;
+                        const restore = () => { try { document.querySelector('video').muted = false; } catch {} };
+                        v.addEventListener('canplay', restore, { once: true });
+                        setTimeout(restore, 1500);
+                    }
+                } catch {}
+            }
             playerState.setSrc({ isNewMediaPlayerInstance: hardReload, refreshAccessToken: hardReload });
             postTwitchWorkerMessage('TriggeredPlayerReload');
             player.play()?.catch?.(() => {});

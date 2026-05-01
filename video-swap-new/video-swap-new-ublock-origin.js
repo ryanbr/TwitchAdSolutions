@@ -36,7 +36,7 @@ twitch-videoad.js text/javascript
             return;
         }
     }
-    const ourTwitchAdSolutionsVersion = 49;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 50;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: video-swap-new v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -1361,6 +1361,17 @@ twitch-videoad.js text/javascript
             }
             if (player?.core?.state?.quality?.group) {
                 localStorage.setItem(lsKeyQuality, JSON.stringify({default:player.core.state.quality.group}));
+            }
+        } catch {}
+        // Pre-mute through hard reload to hide MSE-teardown audio click; restored on
+        // `canplay` with 1500ms cap.
+        try {
+            const v = document.querySelector('video');
+            if (v && !v.muted) {
+                v.muted = true;
+                const restore = () => { try { document.querySelector('video').muted = false; } catch {} };
+                v.addEventListener('canplay', restore, { once: true });
+                setTimeout(restore, 1500);
             }
         } catch {}
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });

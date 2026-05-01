@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (video-swap-new)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      1.81
+// @version      1.82
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @description  Multiple solutions for blocking Twitch ads (video-swap-new)
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 49;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 50;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: video-swap-new v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -1380,6 +1380,17 @@
             }
             if (player?.core?.state?.quality?.group) {
                 localStorage.setItem(lsKeyQuality, JSON.stringify({default:player.core.state.quality.group}));
+            }
+        } catch {}
+        // Pre-mute through hard reload (setSrc always tears down MSE) to hide the audio
+        // click at the MSE discontinuity boundary. Restored on `canplay` with 1500ms cap.
+        try {
+            const v = document.querySelector('video');
+            if (v && !v.muted) {
+                v.muted = true;
+                const restore = () => { try { document.querySelector('video').muted = false; } catch {} };
+                v.addEventListener('canplay', restore, { once: true });
+                setTimeout(restore, 1500);
             }
         } catch {}
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
