@@ -36,7 +36,7 @@ twitch-videoad.js text/javascript
             return;
         }
     }
-    const ourTwitchAdSolutionsVersion = 50;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 51;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: video-swap-new v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -316,7 +316,7 @@ twitch-videoad.js text/javascript
                     if (e.data.key == 'UboUpdateAdBanner') {
                         updateAdblockBanner(e.data);
                     } else if (e.data.key == 'UboReloadPlayer') {
-                        reloadTwitchPlayer(false);
+                        reloadTwitchPlayer(false, e.data.kind);
                     } else if (e.data.key == 'UboPauseResumePlayer') {
                         reloadTwitchPlayer(true);
                     }
@@ -680,7 +680,8 @@ twitch-videoad.js text/javascript
                 streamInfo.EarlyReloadTriggered = true;
                 const reason = recoveryThin ? ' (thin recovery cache: ' + (streamInfo.RecoverySegments?.length || 0) + ' segments)' : '';
                 console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls' + reason);
-                postMessage({ key: 'UboReloadPlayer' });
+                // kind: 'early' bypasses the cooldown gate that's meant for buffer-monitor reloads.
+                postMessage({ key: 'UboReloadPlayer', kind: 'early' });
             }
             // Primary: fresh full-playlist snapshot (< 1.5s old, must not itself contain ad markers)
             const snapshotAge = streamInfo.LastCleanNativePlaylistAt ? (Date.now() - streamInfo.LastCleanNativePlaylistAt) : Infinity;
@@ -803,6 +804,7 @@ twitch-videoad.js text/javascript
                             }
                             streamInfo.HasConfirmedAdAttrs = false;
                             streamInfo.HasLoggedCsaiFastPath = false;
+                            streamInfo.HasLoggedCsaiToSsaiTransition = false;
                             streamInfo.HasLoggedAdAttributes = false;
                             streamInfo.HasLoggedUnknownSignifiers = false;
                             streamInfo.RequestedAds?.clear?.();
@@ -866,9 +868,17 @@ twitch-videoad.js text/javascript
             if (!hasNonLiveSegment) {
                 if (!streamInfo.HasLoggedCsaiFastPath) {
                     streamInfo.HasLoggedCsaiFastPath = true;
-                    console.log('[AD DEBUG] CSAI fast path — all segments live, skipping backup search');
+                    // Reworded — the original "all segments live, skipping backup search"
+                    // implied a permanent state, but it only describes this poll. Twitch can
+                    // shift mid-break to SSAI (stitched ad segments) at which point the
+                    // backup search legitimately fires; the transition is logged separately.
+                    console.log('[AD DEBUG] CSAI fast path — current poll has all-live segments, skipping backup search this poll (playlist may shift to SSAI on subsequent polls)');
                 }
             } else {
+                if (streamInfo.HasLoggedCsaiFastPath && !streamInfo.HasLoggedCsaiToSsaiTransition) {
+                    streamInfo.HasLoggedCsaiToSsaiTransition = true;
+                    console.log('[AD DEBUG] Playlist now contains stitched ad segments — CSAI fast path no longer applies, falling through to backup search');
+                }
                 textStr = await onFoundAd(streamInfo, textStr, true, realFetch, url, currentResolution);
             }
         }
@@ -1287,7 +1297,7 @@ twitch-videoad.js text/javascript
             state: finalPlayerState
         };
     }
-    function reloadTwitchPlayer(isPausePlay) {
+    function reloadTwitchPlayer(isPausePlay, reloadKind) {
         const playerAndState = getPlayerAndState();
         if (!playerAndState) {
             console.log('Could not find react root');
@@ -1306,12 +1316,19 @@ twitch-videoad.js text/javascript
         if (player.isPaused() || player.core?.paused) {
             return;
         }
+        // Reload cooldown — early reloads (worker-triggered thin-cache fast path) bypass the
+        // gate but still update bookkeeping so 3+ rapid early reloads still trigger the 90s
+        // escalation that protects against runaway loops.
         if (!isPausePlay && ReloadCooldownSeconds > 0) {
             const now = Date.now();
             const cooldownMs = ReloadCooldownSeconds * 1000;
+            const isEarly = reloadKind === 'early';
             if (lastReloadTimestamp && now - lastReloadTimestamp < cooldownMs) {
-                console.log('[AD DEBUG] Skipping reload — cooldown active (' + Math.round((cooldownMs - (now - lastReloadTimestamp)) / 1000) + 's remaining)');
-                return;
+                if (!isEarly) {
+                    console.log('[AD DEBUG] Skipping reload — cooldown active (' + Math.round((cooldownMs - (now - lastReloadTimestamp)) / 1000) + 's remaining)');
+                    return;
+                }
+                console.log('[AD DEBUG] Bypassing cooldown for early reload (thin-cache fast path) — ' + Math.round((cooldownMs - (now - lastReloadTimestamp)) / 1000) + 's would have remained');
             }
             reloadTimestamps.push(now);
             const fiveMinAgo = now - 300000;

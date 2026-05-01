@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (video-swap-new)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      1.82
+// @version      1.83
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @description  Multiple solutions for blocking Twitch ads (video-swap-new)
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 50;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 51;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: video-swap-new v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -328,7 +328,7 @@
                     if (e.data.key == 'UboUpdateAdBanner') {
                         updateAdblockBanner(e.data);
                     } else if (e.data.key == 'UboReloadPlayer') {
-                        reloadTwitchPlayer(false);
+                        reloadTwitchPlayer(false, e.data.kind);
                     } else if (e.data.key == 'UboPauseResumePlayer') {
                         reloadTwitchPlayer(true);
                     }
@@ -694,7 +694,11 @@
                 streamInfo.EarlyReloadTriggered = true;
                 const reason = recoveryThin ? ' (thin recovery cache: ' + (streamInfo.RecoverySegments?.length || 0) + ' segments)' : '';
                 console.log('[AD DEBUG] Early reload triggered — ' + streamInfo.ConsecutiveAllStrippedPolls + ' consecutive all-stripped polls' + reason);
-                postMessage({ key: 'UboReloadPlayer' });
+                // kind: 'early' tells the main-thread reload handler this is the thin-cache /
+                // freeze-recovery fast path — bypass the cooldown gate that's meant to prevent
+                // buffer-monitor reload spirals. Without it, the cooldown can defeat the
+                // reload that's specifically designed to fire when the player is wedged.
+                postMessage({ key: 'UboReloadPlayer', kind: 'early' });
             }
             // Primary: fresh full-playlist snapshot (< 1.5s old, must not itself contain ad markers)
             const snapshotAge = streamInfo.LastCleanNativePlaylistAt ? (Date.now() - streamInfo.LastCleanNativePlaylistAt) : Infinity;
@@ -820,6 +824,7 @@
                             }
                             streamInfo.HasConfirmedAdAttrs = false;
                             streamInfo.HasLoggedCsaiFastPath = false;
+                            streamInfo.HasLoggedCsaiToSsaiTransition = false;
                             streamInfo.HasLoggedAdAttributes = false;
                             streamInfo.HasLoggedUnknownSignifiers = false;
                             streamInfo.RequestedAds?.clear?.();
@@ -883,9 +888,18 @@
             if (!hasNonLiveSegment) {
                 if (!streamInfo.HasLoggedCsaiFastPath) {
                     streamInfo.HasLoggedCsaiFastPath = true;
-                    console.log('[AD DEBUG] CSAI fast path — all segments live, skipping backup search');
+                    // Reworded from "all segments live, skipping backup search" — the original
+                    // wording read like a permanent state, but it only describes THIS poll.
+                    // Twitch can shift mid-break from CSAI-only tracking pixels to SSAI stitched
+                    // segments, at which point the backup search legitimately fires. The
+                    // CSAI→SSAI transition is logged separately below.
+                    console.log('[AD DEBUG] CSAI fast path — current poll has all-live segments, skipping backup search this poll (playlist may shift to SSAI on subsequent polls)');
                 }
             } else {
+                if (streamInfo.HasLoggedCsaiFastPath && !streamInfo.HasLoggedCsaiToSsaiTransition) {
+                    streamInfo.HasLoggedCsaiToSsaiTransition = true;
+                    console.log('[AD DEBUG] Playlist now contains stitched ad segments — CSAI fast path no longer applies, falling through to backup search');
+                }
                 textStr = await onFoundAd(streamInfo, textStr, true, realFetch, url, currentResolution);
             }
         }
@@ -1304,7 +1318,7 @@
             state: finalPlayerState
         };
     }
-    function reloadTwitchPlayer(isPausePlay) {
+    function reloadTwitchPlayer(isPausePlay, reloadKind) {
         const playerAndState = getPlayerAndState();
         if (!playerAndState) {
             console.log('Could not find react root');
@@ -1323,13 +1337,20 @@
         if (player.isPaused() || player.core?.paused) {
             return;
         }
-        // Reload cooldown — skip if last reload was too recent (breaks CSAI cascades)
+        // Reload cooldown — skip if last reload was too recent (breaks CSAI cascades).
+        // Early reloads (worker-triggered thin-cache / freeze-recovery fast path) bypass
+        // the gate but still update bookkeeping so 3+ rapid early reloads still escalate
+        // the cooldown the same way buffer-monitor reloads would.
         if (!isPausePlay && ReloadCooldownSeconds > 0) {
             const now = Date.now();
             const cooldownMs = ReloadCooldownSeconds * 1000;
+            const isEarly = reloadKind === 'early';
             if (lastReloadTimestamp && now - lastReloadTimestamp < cooldownMs) {
-                console.log('[AD DEBUG] Skipping reload — cooldown active (' + Math.round((cooldownMs - (now - lastReloadTimestamp)) / 1000) + 's remaining)');
-                return;
+                if (!isEarly) {
+                    console.log('[AD DEBUG] Skipping reload — cooldown active (' + Math.round((cooldownMs - (now - lastReloadTimestamp)) / 1000) + 's remaining)');
+                    return;
+                }
+                console.log('[AD DEBUG] Bypassing cooldown for early reload (thin-cache fast path) — ' + Math.round((cooldownMs - (now - lastReloadTimestamp)) / 1000) + 's would have remained');
             }
             // Auto-escalate: if 3+ reloads in 5 minutes, triple the cooldown
             reloadTimestamps.push(now);
