@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      65.0.0
+// @version      65.1.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 68;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 69;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -1700,14 +1700,29 @@
                     if (position !== undefined && bufferedPosition !== undefined) {
                         //console.log('position:' + position + ' bufferDuration:' + bufferDuration + ' bufferPosition:' + bufferedPosition + ' state: ' + player.core?.state?.state + ' started: ' + playerBufferState.hasStreamStarted);
                         // NOTE: This could be improved. It currently lets the player fully eat the full buffer before it triggers pause/play
+                        // Skip the buffer-stall check entirely while the <video> element isn't actively
+                        // trying to play. Two states this catches:
+                        //   readyState < 2 (HAVE_CURRENT_DATA) — MSE init / seek in flight / fresh post-
+                        //     reload load. currentTime and state.position are both genuinely 0 here, but
+                        //     it's an initialization state, not a stall — escalating would loop reloads.
+                        //   videoEl.paused === true — the outer block already gates on
+                        //     player.isPaused()===false, but the IVS player wrapper and the underlying
+                        //     <video>.paused can disagree briefly during reload teardown / autoplay-policy
+                        //     mute toggles. When <video>.paused is true the player isn't trying to play
+                        //     so "stalled" is the wrong word.
+                        // Hold counters (don't increment, don't reset): a real stall sequence interrupted
+                        // by a brief init dip resumes counting on the next active poll.
+                        const playerNotActivelyPlaying = videoEl && (videoEl.readyState < 2 || videoEl.paused);
                         // Stall trigger: position-frozen check now requires BOTH state.position
                         // AND video.currentTime unchanged. If currentTime is advancing the player
                         // is playing fine and we should not "fix" anything — the false-fires
                         // were causing user-visible 8s-cadence abrupts on low-latency / post-
-                        // quality-change states (issue #193).
+                        // quality-change states.
                         const positionFrozen = (playerBufferState.position == position) &&
                             (playerBufferState.videoCurrentTime === undefined || playerBufferState.videoCurrentTime === videoCurrentTime);
-                        if (playerBufferState.hasStreamStarted &&
+                        if (playerNotActivelyPlaying) {
+                            // Skip — neither increment nor reset, just hold state.
+                        } else if (playerBufferState.hasStreamStarted &&
                             (!PlayerBufferingPrerollCheckEnabled || position > PlayerBufferingPrerollCheckOffset) &&
                             (positionFrozen || bufferDuration < PlayerBufferingDangerZone)  &&
                             playerBufferState.bufferedPosition == bufferedPosition &&
