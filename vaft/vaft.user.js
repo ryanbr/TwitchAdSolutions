@@ -1713,6 +1713,20 @@
                         // Hold counters (don't increment, don't reset): a real stall sequence interrupted
                         // by a brief init dip resumes counting on the next active poll.
                         const playerNotActivelyPlaying = videoEl && (videoEl.readyState < 2 || videoEl.paused);
+                        // FFZ's audio compressor wraps player.load() and creates a fresh <video>
+                        // element on every load (src/sites/shared/player.jsx replaceVideoElement).
+                        // Twitch's playback-monitor then snaps the new element to "buffered region
+                        // 0.04xxx" while the buffer rebuilds. During that brief ramp-up window,
+                        // currentTime plateaus and state.position is also at its post-reload reset
+                        // — exactly the positionFrozen pattern. Detect the swap by element identity
+                        // and treat it like a fresh reload (clear counters, set the recovery flag
+                        // so the next active poll grants grace).
+                        if (videoEl && playerBufferState.videoElement && playerBufferState.videoElement !== videoEl) {
+                            playerBufferState.numSame = 0;
+                            playerBufferState.fixAttempts = 0;
+                            playerBufferState.recoveryReloadUsed = false;
+                        }
+                        playerBufferState.videoElement = videoEl;
                         // Stall trigger: position-frozen check now requires BOTH state.position
                         // AND video.currentTime unchanged. If currentTime is advancing the player
                         // is playing fine and we should not "fix" anything — the false-fires

@@ -1648,6 +1648,17 @@ twitch-videoad.js text/javascript
                         // reload teardown race with player.isPaused()). Hold counters so a real stall
                         // sequence interrupted by a brief init dip resumes counting on next active poll.
                         const playerNotActivelyPlaying = videoEl && (videoEl.readyState < 2 || videoEl.paused);
+                        // FFZ's audio compressor recreates the <video> element on every player.load().
+                        // Twitch then snaps the new element to "buffered region 0.04xxx" — a brief
+                        // currentTime plateau that matches positionFrozen even though playback is
+                        // healthy. Detect the swap by element identity and clear counters so the
+                        // ramp-up isn't counted as a stall.
+                        if (videoEl && playerBufferState.videoElement && playerBufferState.videoElement !== videoEl) {
+                            playerBufferState.numSame = 0;
+                            playerBufferState.fixAttempts = 0;
+                            playerBufferState.recoveryReloadUsed = false;
+                        }
+                        playerBufferState.videoElement = videoEl;
                         const positionFrozen = (playerBufferState.position == position) &&
                             (playerBufferState.videoCurrentTime === undefined || playerBufferState.videoCurrentTime === videoCurrentTime);
                         if (playerNotActivelyPlaying) {
