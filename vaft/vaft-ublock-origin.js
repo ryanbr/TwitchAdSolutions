@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 70;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 71;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -1654,7 +1654,14 @@ twitch-videoad.js text/javascript
                             // Skip — neither increment nor reset, just hold state.
                         } else if (playerBufferState.hasStreamStarted &&
                             (!PlayerBufferingPrerollCheckEnabled || position > PlayerBufferingPrerollCheckOffset) &&
-                            (positionFrozen || bufferDuration < PlayerBufferingDangerZone)  &&
+                            // Tighten to AND: a real stall is BOTH frozen position AND a draining buffer.
+                            // Field reports on Firefox at live edge showed the OR form firing during normal
+                            // thin-buffer breathing (~1-2s buffered, currentTime briefly idle waiting on a
+                            // segment fetch) — pause/play would then knock the player back to readyState=1
+                            // and currentTime=0, snowballing into a self-reinforcing reload cascade. With
+                            // AND, real stalls (frozen + buffer drained below DangerZone) still fire on the
+                            // same poll cadence; healthy thin-buffer feeds no longer trip it.
+                            (positionFrozen && bufferDuration < PlayerBufferingDangerZone)  &&
                             playerBufferState.bufferedPosition == bufferedPosition &&
                             playerBufferState.bufferDuration >= bufferDuration &&
                             (position != 0 || bufferedPosition != 0 || bufferDuration != 0)

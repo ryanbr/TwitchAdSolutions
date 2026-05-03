@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v65.3.0 (2026-05-03)
+
+### Bug Fixes
+- **Buffer-stall detector firing on healthy thin-buffer breathing** — the trigger was `(positionFrozen || bufferDuration < PlayerBufferingDangerZone)`, so a healthy livestream at the live edge with ~1-2s of buffered headroom would fire whenever `state.position` and `video.currentTime` happened to be equal across two consecutive polls (typically a brief ~1s segment-fetch idle). Field log on Firefox 150 showed three consecutive false fires (`bufferDuration` 1.10 / 1.71 / 2.13 — all above the 1s `DangerZone`), each running `pause/play`, which knocked the player back to `readyState=1` / `currentTime=0` / `paused=true` — at which point the trigger then escalated to a real reload, the post-reload thin-buffer state matched again, and the cycle repeated as user-visible 6-8s pauses. Tightened the trigger to AND: real stalls (frozen position AND draining buffer) still fire on the same poll cadence, but healthy thin-buffer feeds where `bufferDuration` stays at or above `DangerZone` no longer trip the detector (vaft) (#199)
+
 ## v65.2.0 (2026-05-02)
 
 ### Changed
