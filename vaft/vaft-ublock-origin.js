@@ -2089,9 +2089,24 @@ twitch-videoad.js text/javascript
                     const v = document.querySelector('video');
                     if (v && !v.muted) {
                         v.muted = true;
-                        const restore = () => { try { document.querySelector('video').muted = false; } catch {} };
-                        v.addEventListener('canplay', restore, { once: true });
-                        setTimeout(restore, 1500);
+                        // setSrc replaces the <video>, so a canplay listener on the original
+                        // `v` never fires — listen on document (capture) so we catch canplay
+                        // on whichever element Twitch attaches the new MediaSource to.
+                        let done = false;
+                        const restore = () => {
+                            if (done) return;
+                            done = true;
+                            document.removeEventListener('canplay', listener, true);
+                            try {
+                                const cur = document.querySelector('video');
+                                if (cur) cur.muted = false;
+                            } catch {}
+                        };
+                        const listener = (e) => {
+                            if (e.target && e.target.tagName === 'VIDEO') restore();
+                        };
+                        document.addEventListener('canplay', listener, true);
+                        setTimeout(restore, 2500);
                     }
                 } catch {}
             }

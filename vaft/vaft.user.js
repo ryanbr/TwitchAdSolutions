@@ -2173,9 +2173,28 @@
                     const v = document.querySelector('video');
                     if (v && !v.muted) {
                         v.muted = true;
-                        const restore = () => { try { document.querySelector('video').muted = false; } catch {} };
-                        v.addEventListener('canplay', restore, { once: true });
-                        setTimeout(restore, 1500);
+                        // setSrc({isNewMediaPlayerInstance:true}) replaces the <video> element,
+                        // so a `canplay` listener on the original `v` never fires — the event
+                        // fires on the new element. Listen on document (capture phase) instead
+                        // so we catch canplay regardless of which <video> Twitch attaches the
+                        // new MediaSource to. Idempotent guard prevents double-fire from the
+                        // safety-net setTimeout racing the listener (Edge MSE init can be
+                        // slower than Chrome — bumped 1500ms→2500ms for that slack).
+                        let done = false;
+                        const restore = () => {
+                            if (done) return;
+                            done = true;
+                            document.removeEventListener('canplay', listener, true);
+                            try {
+                                const cur = document.querySelector('video');
+                                if (cur) cur.muted = false;
+                            } catch {}
+                        };
+                        const listener = (e) => {
+                            if (e.target && e.target.tagName === 'VIDEO') restore();
+                        };
+                        document.addEventListener('canplay', listener, true);
+                        setTimeout(restore, 2500);
                     }
                 } catch {}
             }
