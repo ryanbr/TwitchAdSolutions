@@ -78,7 +78,7 @@ twitch-videoad.js text/javascript
         scope.FallbackPlayerType = 'site';// was 'embed' — site is more reliable when all Source types end up ad-laden
         scope.ForceAccessTokenPlayerType = 'popout';
         scope.PreferLowQualityBackup = true;// Hybrid safety net for SSAI-heavy breaks: sticky escape hatch (fires after ~8s stuck in all-stripped state) + autoplay (360p) as last-resort backup when all Source types are ad-laden. Default on; set twitchAdSolutions_preferLowQualityBackup=false to disable.
-        scope.FastAutoplayFirstTry = false;// On SSAI-uniform channels, prepend autoplay to the iteration when the prior break exhausted all 4 Source types. Saves ~1.5s of probe buffering. Auto-resets on Source-tier recovery. Opt-in: twitchAdSolutions_fastAutoplayFirstTry=true.
+        scope.FastAutoplayFirstTry = false;// Hybrid B: armed breaks sanity-check Source first, jump to autoplay only on contamination. Detects Source recovery automatically. Opt-in: twitchAdSolutions_fastAutoplayFirstTry=true.
         scope.BackupSwapFirst = true;// On ad detect, immediately swap to a backup player-type m3u8 (TTV-AB-style). Avoids MediaSource mixing from strip activity — fewer loading circles in field. Cost: extra fetches on every ad break. Default on; set twitchAdSolutions_backupSwapFirst=false to disable.
         scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers)
         scope.AlwaysReloadPlayerOnAd = false;// Always pause/play when entering/leaving ads
@@ -1071,18 +1071,15 @@ twitch-videoad.js text/javascript
                     playerTypesToTry.unshift(streamInfo.PinnedBackupPlayerType);
                 }
             }
-            // FastAutoplayFirstTry: prepend autoplay when prior break exhausted Source-tier
-            // (SSAI-uniform signal). Saves ~1.5s of probe buffering.
-            if (FastAutoplayFirstTry && streamInfo.LastBreakUsedEscapeHatch && PreferLowQualityBackup) {
-                const autoplayIdx = playerTypesToTry.indexOf('autoplay');
-                if (autoplayIdx > 0) {
-                    playerTypesToTry.splice(autoplayIdx, 1);
-                    playerTypesToTry.unshift('autoplay');
-                    if (!streamInfo.LoggedFastAutoplayThisBreak) {
-                        streamInfo.LoggedFastAutoplayThisBreak = true;
-                        console.log('[AD DEBUG] Fast-autoplay first-try — prior break exhausted Source-tier; probing autoplay first');
-                    }
-                }
+            // FastAutoplayFirstTry — Hybrid B: arm intent. First Source probe goes normally;
+            // skip remaining Source on first contamination via the iteration-loop hook below.
+            // Detects Source recovery automatically — no missed full-quality breaks.
+            streamInfo.HybridSkipSourceAfterFailure = (FastAutoplayFirstTry && streamInfo.LastBreakUsedEscapeHatch && PreferLowQualityBackup);
+            // Only log at start of new armed break (LoggedBackupAdsByType empty = pre-iteration).
+            if (streamInfo.HybridSkipSourceAfterFailure && !streamInfo.LoggedFastAutoplayThisBreak
+                && (!streamInfo.LoggedBackupAdsByType || streamInfo.LoggedBackupAdsByType.size === 0)) {
+                streamInfo.LoggedFastAutoplayThisBreak = true;
+                console.log('[AD DEBUG] FastAutoplayFirstTry hybrid armed — prior break exhausted Source-tier; will skip remaining Source probes on first contamination this break');
             }
             // Real-time contamination reorder: on poll 2+ of a break, move types that were
             // already logged as ad-laden earlier in the same break to the end of iteration.
@@ -1194,6 +1191,18 @@ twitch-videoad.js text/javascript
                                             streamInfo.LoggedBackupAdsByType.add(playerType);
                                             console.log('[AD DEBUG] Backup stream (' + playerType + ') also has ads');
                                         }
+                                        // Hybrid skip: first Source contamination this break + armed → jump to autoplay.
+                                        if (streamInfo.HybridSkipSourceAfterFailure && !streamInfo.HybridSkipFiredThisBreak && playerType !== 'autoplay') {
+                                            const autoplayIdxInRemaining = playerTypesToTry.indexOf('autoplay', playerTypeIndex + 1);
+                                            if (autoplayIdxInRemaining > playerTypeIndex + 1) {
+                                                const skipped = playerTypesToTry.slice(playerTypeIndex + 1, autoplayIdxInRemaining);
+                                                playerTypesToTry.splice(playerTypeIndex + 1, autoplayIdxInRemaining - playerTypeIndex - 1);
+                                                console.log('[AD DEBUG] FastAutoplayFirstTry hybrid: ' + playerType + ' contaminated — skipping [' + skipped.join(', ') + '] and jumping to autoplay (SSAI-uniform pattern continues)');
+                                            } else if (autoplayIdxInRemaining === -1) {
+                                                console.log('[AD DEBUG] FastAutoplayFirstTry hybrid: ' + playerType + ' contaminated but autoplay not in remaining iteration — falling through to defaults');
+                                            }
+                                            streamInfo.HybridSkipFiredThisBreak = true;
+                                        }
                                     }
                                     if (isFullyCachedPlayerType || isDoingMinimalRequests) {
                                         backupPlayerType = playerType;
@@ -1267,19 +1276,26 @@ twitch-videoad.js text/javascript
                         console.log('[AD DEBUG] Post-escape backup: ' + backupPlayerType + ' (' + qualityTier + ') — recovered from sticky-path freeze');
                     } else if (backupPlayerType === 'autoplay' && PreferLowQualityBackup) {
                         const sourceTried = streamInfo.LoggedBackupAdsByType?.size || 0;
+                        const skippedViaHybrid = streamInfo.HybridSkipFiredThisBreak === true;
                         if (sourceTried === 0) {
                             console.log('[AD DEBUG] Autoplay backup committed — 360p pinned from prior break (PreferLowQualityBackup)');
+                        } else if (skippedViaHybrid) {
+                            console.log('[AD DEBUG] Autoplay backup committed — 360p fallback via hybrid skip after ' + sourceTried + ' Source type(s) ad-laden (PreferLowQualityBackup)');
                         } else {
                             console.log('[AD DEBUG] Autoplay backup committed — 360p fallback after ' + sourceTried + ' Source type(s) ad-laden (PreferLowQualityBackup)');
                         }
-                        // FastAutoplayFirstTry signal: only flag SSAI-uniform when 4 Source types
-                        // were probed and all contaminated. Pinned-from-prior-break (sourceTried==0)
-                        // doesn't add new info.
-                        if (FastAutoplayFirstTry && sourceTried >= 4) {
+                        // Arm signal: full Source-tier exhaustion OR hybrid-skip path.
+                        const wasArmedAlready = streamInfo.LastBreakUsedEscapeHatch;
+                        if (FastAutoplayFirstTry && (sourceTried >= 4 || skippedViaHybrid)) {
                             streamInfo.LastBreakUsedEscapeHatch = true;
+                            if (!wasArmedAlready) {
+                                console.log('[AD DEBUG] FastAutoplayFirstTry hybrid: arming escape-hatch signal — next break will sanity-check Source then jump to autoplay if contaminated');
+                            }
                         }
                     } else if (FastAutoplayFirstTry && backupPlayerType !== 'autoplay') {
-                        // Source-tier won — channel recovered, reset signal.
+                        if (streamInfo.LastBreakUsedEscapeHatch) {
+                            console.log('[AD DEBUG] FastAutoplayFirstTry hybrid: Source-tier recovered (' + backupPlayerType + ' clean) — disarming escape-hatch signal');
+                        }
                         streamInfo.LastBreakUsedEscapeHatch = false;
                     }
                 }
@@ -1402,6 +1418,8 @@ twitch-videoad.js text/javascript
                 streamInfo.HasLoggedAdAttributes = false;
                 streamInfo.HasLoggedUnknownSignifiers = false;
                 streamInfo.LoggedFastAutoplayThisBreak = false;
+                streamInfo.HybridSkipSourceAfterFailure = false;
+                streamInfo.HybridSkipFiredThisBreak = false;
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
@@ -2367,7 +2385,7 @@ twitch-videoad.js text/javascript
         const lsFastAutoplay = localStorage.getItem('twitchAdSolutions_fastAutoplayFirstTry');
         if (lsFastAutoplay === 'true') {
             FastAutoplayFirstTry = true;
-            console.log('[AD DEBUG] FastAutoplayFirstTry enabled via localStorage — autoplay tried first on breaks following an autoplay-via-escape-hatch commit');
+            console.log('[AD DEBUG] FastAutoplayFirstTry (hybrid) enabled via localStorage — armed breaks sanity-check Source first, jump to autoplay only on confirmed contamination');
         }
         const lsBackupSwapFirst = localStorage.getItem('twitchAdSolutions_backupSwapFirst');
         if (lsBackupSwapFirst === 'false') {

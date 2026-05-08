@@ -88,7 +88,7 @@
         scope.FallbackPlayerType = 'site';// was 'embed' — site is more reliable when all Source types end up ad-laden
         scope.ForceAccessTokenPlayerType = 'popout';
         scope.PreferLowQualityBackup = true;// Hybrid safety net for SSAI-heavy breaks: sticky escape hatch (fires after ~8s stuck in all-stripped state) + autoplay (360p) as last-resort backup when all Source types are ad-laden. Default on; set twitchAdSolutions_preferLowQualityBackup=false to disable.
-        scope.FastAutoplayFirstTry = false;// On SSAI-uniform channels (warn / emongg / mande / slvm) where every break exhausts the Source-tier backup search, the iteration through 4 Source types takes ~1.5-2s of buffering before autoplay (360p) is committed via PreferLowQualityBackup escape hatch. When true, if the prior break committed autoplay-via-escape-hatch, prepend autoplay to position 0 of playerTypesToTry on the next break — autoplay wins on first probe (~340ms) instead of last-resort. Auto-resets when a Source-tier type wins (channel recovered). Opt-in via localStorage twitchAdSolutions_fastAutoplayFirstTry=true.
+        scope.FastAutoplayFirstTry = false;// Hybrid B (single-probe sanity check): on armed breaks (prior break exhausted Source-tier and committed autoplay), let the first Source probe go normally — if clean, commit Source (channel recovered, full quality restored, signal disarms); if contaminated, skip remaining Source probes and jump to autoplay on the SSAI-uniform assumption that all 4 Source types are contaminated together. Cost: 2 probes (~1.4s) on truly-uniform channels vs default 5 probes (~3.5s). Recovery: detected on the very first probe of the next break — no missed Source-clean breaks. Opt-in via localStorage twitchAdSolutions_fastAutoplayFirstTry=true.
         scope.BackupSwapFirst = true;// On ad detect, immediately swap to a backup player-type m3u8 (TTV-AB-style). Avoids MediaSource mixing from strip activity — fewer loading circles in field. Cost: extra fetches on every ad break. Default on; set twitchAdSolutions_backupSwapFirst=false to disable.
         scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers)
         scope.AlwaysReloadPlayerOnAd = false;// Always pause/play when entering/leaving ads
@@ -1119,24 +1119,33 @@
                     playerTypesToTry.unshift(streamInfo.PinnedBackupPlayerType);
                 }
             }
-            // FastAutoplayFirstTry: when the immediately prior break committed autoplay via
-            // PreferLowQualityBackup escape hatch (all 4 Source types contaminated), this
-            // channel is currently SSAI-uniform — Source-tier probes are wasted ~1.5s of
-            // buffering. Try autoplay first instead. If autoplay is contaminated this time,
-            // iteration falls through to the rest of playerTypesToTry as normal. If a
-            // Source-tier type wins (channel recovered), the "Source committed" branch
-            // above resets LastBreakUsedEscapeHatch so the next break does normal iteration.
-            // Opt-in via twitchAdSolutions_fastAutoplayFirstTry=true.
-            if (FastAutoplayFirstTry && streamInfo.LastBreakUsedEscapeHatch && PreferLowQualityBackup) {
-                const autoplayIdx = playerTypesToTry.indexOf('autoplay');
-                if (autoplayIdx > 0) {
-                    playerTypesToTry.splice(autoplayIdx, 1);
-                    playerTypesToTry.unshift('autoplay');
-                    if (!streamInfo.LoggedFastAutoplayThisBreak) {
-                        streamInfo.LoggedFastAutoplayThisBreak = true;
-                        console.log('[AD DEBUG] Fast-autoplay first-try — prior break exhausted Source-tier; probing autoplay first');
-                    }
-                }
+            // FastAutoplayFirstTry — Hybrid B (single-probe sanity check):
+            // When armed (prior break exhausted Source-tier and committed autoplay), DON'T
+            // skip Source-tier outright. Instead, let the first Source probe go normally —
+            // if it returns clean, the channel has recovered and we commit Source at full
+            // quality. If it returns contaminated, jump directly to autoplay (skipping the
+            // remaining Source probes) on the well-supported assumption that all 4 Source
+            // types are contaminated together on truly SSAI-uniform channels.
+            //
+            // Cost on truly-uniform: 2 probes (~1.4s) vs default 5 probes (~3.5s) — saves
+            // ~2.1s/break. Cost on recovery: 1 probe (~700ms) — Source clean wins, channel
+            // restored to full quality. Replaces the prior "always prepend autoplay when
+            // armed" approach which had a "stuck on 360p" failure mode when channels
+            // recovered (autoplay always wins, Source never re-checked).
+            //
+            // The skip itself happens in the iteration loop below at the first Source-tier
+            // contamination of the break. Setting the intent here keeps the trigger logic
+            // local to the iteration site. Opt-in via twitchAdSolutions_fastAutoplayFirstTry=true.
+            streamInfo.HybridSkipSourceAfterFailure = (FastAutoplayFirstTry && streamInfo.LastBreakUsedEscapeHatch && PreferLowQualityBackup);
+            // Only log "armed" at the START of a new armed break (LoggedBackupAdsByType empty
+            // means we haven't begun iteration yet this break). Suppresses the misleading
+            // post-commit re-poll fire — after autoplay commits, IsShowingAd remains true
+            // until end-of-break and the worker keeps polling, re-entering this code path
+            // with `armed` true but the iteration context already past.
+            if (streamInfo.HybridSkipSourceAfterFailure && !streamInfo.LoggedFastAutoplayThisBreak
+                && (!streamInfo.LoggedBackupAdsByType || streamInfo.LoggedBackupAdsByType.size === 0)) {
+                streamInfo.LoggedFastAutoplayThisBreak = true;
+                console.log('[AD DEBUG] FastAutoplayFirstTry hybrid armed — prior break exhausted Source-tier; will skip remaining Source probes on first contamination this break');
             }
             // Real-time contamination reorder: on poll 2+ of a break, move types that were
             // already logged as ad-laden earlier in the same break to the end of iteration.
@@ -1248,6 +1257,20 @@
                                             streamInfo.LoggedBackupAdsByType.add(playerType);
                                             console.log('[AD DEBUG] Backup stream (' + playerType + ') also has ads');
                                         }
+                                        // FastAutoplayFirstTry hybrid skip: if armed and this is the first
+                                        // Source-tier contamination this break, jump directly to autoplay
+                                        // (skip remaining Source probes). Single-shot per break.
+                                        if (streamInfo.HybridSkipSourceAfterFailure && !streamInfo.HybridSkipFiredThisBreak && playerType !== 'autoplay') {
+                                            const autoplayIdxInRemaining = playerTypesToTry.indexOf('autoplay', playerTypeIndex + 1);
+                                            if (autoplayIdxInRemaining > playerTypeIndex + 1) {
+                                                const skipped = playerTypesToTry.slice(playerTypeIndex + 1, autoplayIdxInRemaining);
+                                                playerTypesToTry.splice(playerTypeIndex + 1, autoplayIdxInRemaining - playerTypeIndex - 1);
+                                                console.log('[AD DEBUG] FastAutoplayFirstTry hybrid: ' + playerType + ' contaminated — skipping [' + skipped.join(', ') + '] and jumping to autoplay (SSAI-uniform pattern continues)');
+                                            } else if (autoplayIdxInRemaining === -1) {
+                                                console.log('[AD DEBUG] FastAutoplayFirstTry hybrid: ' + playerType + ' contaminated but autoplay not in remaining iteration — falling through to defaults');
+                                            }
+                                            streamInfo.HybridSkipFiredThisBreak = true;
+                                        }
                                     }
                                     if (isFullyCachedPlayerType || isDoingMinimalRequests) {
                                         backupPlayerType = playerType;
@@ -1324,20 +1347,31 @@
                         console.log('[AD DEBUG] Post-escape backup: ' + backupPlayerType + ' (' + qualityTier + ') — recovered from sticky-path freeze');
                     } else if (backupPlayerType === 'autoplay' && PreferLowQualityBackup) {
                         const sourceTried = streamInfo.LoggedBackupAdsByType?.size || 0;
+                        const skippedViaHybrid = streamInfo.HybridSkipFiredThisBreak === true;
                         if (sourceTried === 0) {
                             console.log('[AD DEBUG] Autoplay backup committed — 360p pinned from prior break (PreferLowQualityBackup)');
+                        } else if (skippedViaHybrid) {
+                            console.log('[AD DEBUG] Autoplay backup committed — 360p fallback via hybrid skip after ' + sourceTried + ' Source type(s) ad-laden (PreferLowQualityBackup)');
                         } else {
                             console.log('[AD DEBUG] Autoplay backup committed — 360p fallback after ' + sourceTried + ' Source type(s) ad-laden (PreferLowQualityBackup)');
                         }
-                        // FastAutoplayFirstTry: only flag the channel as SSAI-uniform when 4 Source
-                        // types were probed and all contaminated. The "0 sourceTried" case (pinned
-                        // from prior break) doesn't add new information.
-                        if (FastAutoplayFirstTry && sourceTried >= 4) {
+                        // FastAutoplayFirstTry: arm signal when SSAI-uniform pattern is observed.
+                        // Either path counts: full 4-probe Source-tier exhaustion (sourceTried>=4)
+                        // OR hybrid-skip path (first Source dirty, jumped straight to autoplay).
+                        // The "0 sourceTried" case (pinned from prior break) doesn't add new info.
+                        const wasArmedAlready = streamInfo.LastBreakUsedEscapeHatch;
+                        if (FastAutoplayFirstTry && (sourceTried >= 4 || skippedViaHybrid)) {
                             streamInfo.LastBreakUsedEscapeHatch = true;
+                            if (!wasArmedAlready) {
+                                console.log('[AD DEBUG] FastAutoplayFirstTry hybrid: arming escape-hatch signal — next break will sanity-check Source then jump to autoplay if contaminated');
+                            }
                         }
                     } else if (FastAutoplayFirstTry && backupPlayerType !== 'autoplay') {
                         // Source-tier type committed cleanly — channel recovered. Reset the
                         // SSAI-uniform signal so next break does normal iteration.
+                        if (streamInfo.LastBreakUsedEscapeHatch) {
+                            console.log('[AD DEBUG] FastAutoplayFirstTry hybrid: Source-tier recovered (' + backupPlayerType + ' clean) — disarming escape-hatch signal');
+                        }
                         streamInfo.LastBreakUsedEscapeHatch = false;
                     }
                 }
@@ -1460,6 +1494,8 @@
                 streamInfo.HasLoggedAdAttributes = false;
                 streamInfo.HasLoggedUnknownSignifiers = false;
                 streamInfo.LoggedFastAutoplayThisBreak = false;
+                streamInfo.HybridSkipSourceAfterFailure = false;
+                streamInfo.HybridSkipFiredThisBreak = false;
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
@@ -2455,7 +2491,7 @@
         const lsFastAutoplay = localStorage.getItem('twitchAdSolutions_fastAutoplayFirstTry');
         if (lsFastAutoplay === 'true') {
             FastAutoplayFirstTry = true;
-            console.log('[AD DEBUG] FastAutoplayFirstTry enabled via localStorage — autoplay tried first on breaks following an autoplay-via-escape-hatch commit (saves ~1.5s of probe loop on SSAI-uniform channels)');
+            console.log('[AD DEBUG] FastAutoplayFirstTry (hybrid) enabled via localStorage — armed breaks sanity-check Source first, jump to autoplay only on confirmed contamination (saves ~2.1s of probe loop on SSAI-uniform channels, detects Source recovery automatically)');
         }
         const lsBackupSwapFirst = localStorage.getItem('twitchAdSolutions_backupSwapFirst');
         if (lsBackupSwapFirst === 'false') {
