@@ -236,7 +236,10 @@
             const workerString = proto.toString();
             if (workerStringConflicts.some((x) => workerString.includes(x))) {
                 if (parent !== null) {
-                    Object.setPrototypeOf(parent, Object.getPrototypeOf(proto));
+                    // Another extension may have frozen Worker.prototype or set non-configurable
+                    // [[Prototype]]; setPrototypeOf throws TypeError in that case. Catch per-link
+                    // so a single foreign-frozen ring doesn't abort the whole chain walk.
+                    try { Object.setPrototypeOf(parent, Object.getPrototypeOf(proto)); } catch {}
                 }
             } else {
                 if (root === null) {
@@ -263,7 +266,9 @@
     function reinsertWorkers(worker, reinsert) {
         let parent = worker;
         for (let i = 0; i < reinsert.length; i++) {
-            Object.setPrototypeOf(reinsert[i], parent);
+            // Per-link try-catch: a foreign extension that froze a single proto entry
+            // shouldn't break the whole reinsertion chain. Skip the failing link, keep going.
+            try { Object.setPrototypeOf(reinsert[i], parent); } catch {}
             parent = reinsert[i];
         }
         return parent;
