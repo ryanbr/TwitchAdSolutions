@@ -398,7 +398,10 @@
                         }
                     });
                     hookWorkerFetch();
-                    eval(workerString);
+                    // Guard the eval — malformed workerString shouldn't silently break
+                    // Twitch's player logic without a diagnostic. Worker stays alive on
+                    // throw (vaft hooks installed above), but Twitch's logic wouldn't run.
+                    try { eval(workerString); } catch (e) { console.error('[AD DEBUG] Worker eval failed — Twitch player logic not loaded:', e); }
                 `;
                 // Revoke previous blob URL to prevent memory accumulation across worker replacements
                 if (injectedBlobUrl && originalRevokeObjectURL) {

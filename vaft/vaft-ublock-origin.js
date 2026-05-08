@@ -374,7 +374,9 @@ twitch-videoad.js text/javascript
                         }
                     });
                     hookWorkerFetch();
-                    eval(workerString);
+                    // Guard the eval — malformed workerString shouldn't silently break
+                    // Twitch's player logic without a diagnostic.
+                    try { eval(workerString); } catch (e) { console.error('[AD DEBUG] Worker eval failed — Twitch player logic not loaded:', e); }
                 `;
                 if (injectedBlobUrl && originalRevokeObjectURL) {
                     try { originalRevokeObjectURL.call(URL, injectedBlobUrl); } catch {}
