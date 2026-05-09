@@ -2177,7 +2177,7 @@
             // Hard reload for 'early' (mid-break escape — fresh session gets new ad-decision bucket).
             // Soft reload for 'post-ad' (smooth transition, no black screen teardown).
             const hardReload = reloadKind === 'early';
-            console.log('Reloading Twitch player' + (hardReload ? ' (hard)' : ' (soft)'));
+            console.log('[AD DEBUG] Reloading Twitch player' + (hardReload ? ' (hard)' : ' (soft)'));
             // Pre-mute through hard reload to hide the MediaSource-teardown audio click.
             // New MSE initialization crosses a discontinuity boundary that produces an
             // audible pop on first frames. Restored on `canplay` (audio decodable) with a

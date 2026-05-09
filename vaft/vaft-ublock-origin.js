@@ -2090,7 +2090,7 @@ twitch-videoad.js text/javascript
             // Hard reload for 'early' (mid-break escape — fresh session gets new ad-decision bucket).
             // Soft reload for 'post-ad' (smooth transition, no black screen teardown).
             const hardReload = reloadKind === 'early';
-            console.log('Reloading Twitch player' + (hardReload ? ' (hard)' : ' (soft)'));
+            console.log('[AD DEBUG] Reloading Twitch player' + (hardReload ? ' (hard)' : ' (soft)'));
             // Pre-mute through hard reload to hide MSE-teardown audio click; restored on
             // `canplay` with 1500ms safety cap. Skipped if user already muted.
             if (hardReload) {
