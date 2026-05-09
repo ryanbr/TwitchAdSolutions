@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      66.1.0
+// @version      66.4.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 74;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 77;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -65,7 +65,7 @@
         // DATERANGE classes confirmed as session/source metadata over weeks of field
         // observation — surface as "candidates" otherwise. Filtered out by the candidate
         // logger so the diagnostic stays focused on genuinely new markers.
-        scope.KnownNonAdSignifiers = ['twitch-session', 'twitch-stream-source'];
+        scope.KnownNonAdSignifiers = ['twitch-session', 'twitch-stream-source', 'twitch-ad-quartile'];
         scope.AdSegmentURLPatterns = ['/adsquared/', '/_404/', '/processing'];
         // Precompiled regexes shared across the stripAdSegments hot path. Declared
         // here (serialized into the worker blob with declareOptions) so literals
@@ -1479,23 +1479,29 @@
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
                     streamInfo.IsUsingModifiedM3U8 = false;
-                    // Exception: if ANY backup was committed during this break (escape hatch
-                    // or cycle rescue that didn't meet cycleRescuedCleanly criteria), the
-                    // MediaSource buffer has accumulated mixed-source segments (backup-fetched
-                    // via alternate player-type access token + native-fetched). Mixing can
-                    // cause audio/video track timestamps to diverge, and without a reload the
-                    // drift compounds across subsequent escape-hatch breaks. Force a hard reload
-                    // to flush the MediaSource buffer + refresh the access token.
-                    // For autoplay (360p) specifically, the reload also restores Source
-                    // quality (autoplay-scoped token only serves 360p variant ladder).
+                    // Reload requirement when a backup was committed during the break:
+                    //   - autoplay (360p): MUST reload — autoplay-scoped access token only
+                    //     serves the 360p variant ladder, so we need a fresh access token to
+                    //     return to Source quality.
+                    //   - Source-tier backup (site/popout/mobile_web/embed) with 0 stripped:
+                    //     no synthetic segments were injected and no segments were modified,
+                    //     so the "mixed-source MSE drift" rationale doesn't apply (it assumes
+                    //     strip activity produced artificial timestamps). Skip the reload to
+                    //     avoid a loading circle on CSAI-only-but-marked channels (emongg /
+                    //     sinatraa) where Source-tier backups are committed but no actual ad
+                    //     segments are ever delivered. The next m3u8 poll on the main stream
+                    //     resumes naturally without a hard reload.
                     if (streamInfo.LastCommittedBackupPlayerType) {
                         const isAutoplay = streamInfo.LastCommittedBackupPlayerType === 'autoplay';
-                        const reason = isAutoplay ? 'autoplay (360p) — restoring Source quality' : streamInfo.LastCommittedBackupPlayerType + ' — flushing MediaSource to prevent A/V desync accumulation';
-                        console.log('[AD DEBUG] Post-escape reload: ' + reason);
-                        streamInfo.LastPlayerReload = Date.now();
-                        if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
-                        streamInfo.ReloadTimestamps.push(Date.now());
-                        postMessage({ key: 'ReloadPlayer', kind: 'early' });
+                        if (isAutoplay) {
+                            console.log('[AD DEBUG] Post-escape reload: autoplay (360p) — restoring Source quality');
+                            streamInfo.LastPlayerReload = Date.now();
+                            if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
+                            streamInfo.ReloadTimestamps.push(Date.now());
+                            postMessage({ key: 'ReloadPlayer', kind: 'early' });
+                        } else {
+                            console.log('[AD DEBUG] Skipping post-escape reload — Source-tier backup ' + streamInfo.LastCommittedBackupPlayerType + ' with 0 stripped, no synthetic-segment injection, no MSE drift to flush');
+                        }
                     }
                 } else {
                 // Auto-escalate cooldown: if 3+ reloads in last 5 min, triple the cooldown

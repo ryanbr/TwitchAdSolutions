@@ -1,5 +1,13 @@
 ## Unreleased
 
+## v66.4.0 (2026-05-09)
+
+### Bug Fixes
+- **Skip post-escape MSE-flush reload on Source-tier 0-stripped breaks** — followup to v66.3.0 (#213). Field log on emongg / sinatraa showed that even though the autoplay-360p escape hatch is now correctly avoided on CSAI-only-but-marked breaks, a hard reload still fires at break end (`Post-escape reload: X — flushing MediaSource to prevent A/V desync accumulation`) producing a visible loading circle. The "mixed-source MSE drift" rationale for the flush assumes strip activity injected synthetic timestamps; on pure CSAI-only breaks (`stripped 0`) no segments were modified or replaced, so there's nothing to flush. Skip the reload when the committed backup is Source-tier (autoplay 360p commits still reload — autoplay-scoped access token only serves the 360p variant ladder, must be exchanged for a fresh Source-tier token) (vaft) (#TBD)
+
+### Detection Improvements
+- **Add `twitch-ad-quartile` to KnownNonAdSignifiers** — observed in field logs as `EXT-X-DATERANGE:CLASS="twitch-ad-quartile"`. Analytics cue for ad-quartile-completion events (25/50/75/100% watch progress) — ad-related metadata, not a signal that a break is starting. Filtered from the candidate-marker diagnostic so the log stays focused on genuinely new markers (vaft + video-swap-new) (#TBD)
+
 ## v66.1.0 (2026-05-09)
 
 ### Bug Fixes
