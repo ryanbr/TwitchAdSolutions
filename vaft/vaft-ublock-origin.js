@@ -102,7 +102,7 @@ twitch-videoad.js text/javascript
         scope.PlayerBufferingFix = true;// If true this will pause/play the player when it gets stuck buffering
         scope.PlayerBufferingDelay = 600;// How often should we check the player state (in milliseconds)
         scope.PlayerBufferingSameStateCount = 3;// How many times of seeing the same player state until we trigger pause/play (it will only trigger it one time until the player state changes again)
-        scope.PlayerBufferingDangerZone = 1;// The buffering time left (in seconds) when we should ignore the players playback position in the player state check
+        scope.PlayerBufferingDangerZone = 0.5;// Lowered 1 → 0.5: avoids cascade fires on thin-but-functional buffer at live edge where pause/play interacts badly with Twitch's playback-monitor.
         scope.PlayerBufferingDoPlayerReload = false;// If true this will do a player reload instead of pause/play (player reloading is better at fixing the playback issues but it takes slightly longer)
         scope.PlayerBufferingMinRepeatDelay = 8000;// Minimum delay (in milliseconds) between each pause/play (this is to avoid over pressing pause/play when there are genuine buffering problems)
         scope.PlayerBufferingPrerollCheckEnabled = false;// Enable this if you're getting an immediate pause/play/reload as you open a stream (which is causing the stream to take longer to load). One problem with this being true is that it can cause the player to get stuck in some instances requiring the user to press pause/play
