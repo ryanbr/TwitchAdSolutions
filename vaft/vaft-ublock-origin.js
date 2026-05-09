@@ -53,7 +53,7 @@ twitch-videoad.js text/javascript
         // marker is a subset of this prefix.
         scope.AdSignifiers = ['stitched-ad', 'EXT-X-CUE-OUT', 'twitch-stitched', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"'];
         // Confirmed session/source metadata, never ad markers — filter from candidate log.
-        scope.KnownNonAdSignifiers = ['twitch-session', 'twitch-stream-source', 'twitch-ad-quartile'];
+        scope.KnownNonAdSignifiers = ['twitch-session', 'twitch-stream-source', 'twitch-ad-quartile', 'twitch-assignment'];
         scope.AdSegmentURLPatterns = ['/adsquared/', '/_404/', '/processing'];
         // Precompiled regexes shared across the stripAdSegments hot path. Declared
         // here (serialized into the worker blob with declareOptions) so literals
