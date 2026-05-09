@@ -2174,17 +2174,20 @@
                     if (v && !v.muted) {
                         v.muted = true;
                         // setSrc({isNewMediaPlayerInstance:true}) replaces the <video> element,
-                        // so a `canplay` listener on the original `v` never fires — the event
-                        // fires on the new element. Listen on document (capture phase) instead
-                        // so we catch canplay regardless of which <video> Twitch attaches the
-                        // new MediaSource to. Idempotent guard prevents double-fire from the
-                        // safety-net setTimeout racing the listener (Edge MSE init can be
-                        // slower than Chrome — bumped 1500ms→2500ms for that slack).
+                        // so a listener on the original `v` never fires — events fire on the
+                        // new element. Listen on document (capture phase) instead so we catch
+                        // them regardless of which <video> Twitch attaches the new MediaSource
+                        // to. Three event triggers are wired up because Edge dispatches
+                        // `loadeddata` / `playing` independently of `canplay` and any of them
+                        // is sufficient signal that the new element is ready for unmute.
+                        // First-fired wins via the idempotent `done` guard.
                         let done = false;
                         const restore = () => {
                             if (done) return;
                             done = true;
                             document.removeEventListener('canplay', listener, true);
+                            document.removeEventListener('playing', listener, true);
+                            document.removeEventListener('loadeddata', listener, true);
                             try {
                                 const cur = document.querySelector('video');
                                 if (cur) cur.muted = false;
@@ -2194,7 +2197,25 @@
                             if (e.target && e.target.tagName === 'VIDEO') restore();
                         };
                         document.addEventListener('canplay', listener, true);
-                        setTimeout(restore, 2500);
+                        document.addEventListener('playing', listener, true);
+                        document.addEventListener('loadeddata', listener, true);
+                        setTimeout(restore, 4000);// Bumped 2500ms → 4000ms for Edge slow-init slack — issue #200 follow-up reports muted state on hard reloads where MSE init exceeded 2500ms.
+                        // Final backstop: if the player ends up muted at 5500ms despite our
+                        // restore (Twitch's own LS-restore at ~3000ms can re-mute if the
+                        // captured pre-reload muted snapshot was true), force one more
+                        // unmute. Idempotent — no-op if already unmuted. Skipped if the user
+                        // explicitly muted (`weJustPaused` paths preserve user-mute intent;
+                        // checking `playerBufferState.userPauseIntent` here is a cheap proxy
+                        // — pause+mute are conceptually correlated by Twitch's player code).
+                        setTimeout(() => {
+                            try {
+                                const cur = document.querySelector('video');
+                                if (cur && cur.muted && !playerBufferState.userPauseIntent) {
+                                    cur.muted = false;
+                                    console.log('[AD DEBUG] Hard reload backstop unmute fired — element was still muted at 5500ms (Twitch LS-restore likely re-muted post-canplay)');
+                                }
+                            } catch {}
+                        }, 5500);
                     }
                 } catch {}
             }

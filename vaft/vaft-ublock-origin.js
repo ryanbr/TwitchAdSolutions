@@ -2089,14 +2089,15 @@ twitch-videoad.js text/javascript
                     const v = document.querySelector('video');
                     if (v && !v.muted) {
                         v.muted = true;
-                        // setSrc replaces the <video>, so a canplay listener on the original
-                        // `v` never fires — listen on document (capture) so we catch canplay
-                        // on whichever element Twitch attaches the new MediaSource to.
+                        // Multi-event restore: Edge fires loadeddata/playing independently of
+                        // canplay; first-fired wins via the idempotent `done` guard.
                         let done = false;
                         const restore = () => {
                             if (done) return;
                             done = true;
                             document.removeEventListener('canplay', listener, true);
+                            document.removeEventListener('playing', listener, true);
+                            document.removeEventListener('loadeddata', listener, true);
                             try {
                                 const cur = document.querySelector('video');
                                 if (cur) cur.muted = false;
@@ -2106,7 +2107,20 @@ twitch-videoad.js text/javascript
                             if (e.target && e.target.tagName === 'VIDEO') restore();
                         };
                         document.addEventListener('canplay', listener, true);
-                        setTimeout(restore, 2500);
+                        document.addEventListener('playing', listener, true);
+                        document.addEventListener('loadeddata', listener, true);
+                        setTimeout(restore, 4000);
+                        // Backstop: re-check at 5500ms. Twitch's LS-restore at ~3000ms can
+                        // re-mute post-restore if it captured a muted snapshot. Idempotent.
+                        setTimeout(() => {
+                            try {
+                                const cur = document.querySelector('video');
+                                if (cur && cur.muted && !playerBufferState.userPauseIntent) {
+                                    cur.muted = false;
+                                    console.log('[AD DEBUG] Hard reload backstop unmute fired — element was still muted at 5500ms');
+                                }
+                            } catch {}
+                        }, 5500);
                     }
                 } catch {}
             }

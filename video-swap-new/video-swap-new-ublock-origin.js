@@ -1390,13 +1390,14 @@ twitch-videoad.js text/javascript
             const v = document.querySelector('video');
             if (v && !v.muted) {
                 v.muted = true;
-                // setSrc replaces the <video>, so a canplay listener on the original
-                // `v` never fires — listen on document (capture) instead.
+                // Multi-event restore: canplay/playing/loadeddata — first-fired wins.
                 let done = false;
                 const restore = () => {
                     if (done) return;
                     done = true;
                     document.removeEventListener('canplay', listener, true);
+                    document.removeEventListener('playing', listener, true);
+                    document.removeEventListener('loadeddata', listener, true);
                     try {
                         const cur = document.querySelector('video');
                         if (cur) cur.muted = false;
@@ -1406,7 +1407,9 @@ twitch-videoad.js text/javascript
                     if (e.target && e.target.tagName === 'VIDEO') restore();
                 };
                 document.addEventListener('canplay', listener, true);
-                setTimeout(restore, 2500);
+                document.addEventListener('playing', listener, true);
+                document.addEventListener('loadeddata', listener, true);
+                setTimeout(restore, 4000);
             }
         } catch {}
         playerState.setSrc({ isNewMediaPlayerInstance: true, refreshAccessToken: true });
