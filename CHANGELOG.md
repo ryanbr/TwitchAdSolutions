@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v66.5.0 (2026-05-09)
+
+### Bug Fixes
+- **Clear `LastBreakUsedEscapeHatch` when break ends CSAI-only** — followup to v66.4.0 field testing on emongg. The FastAutoplayFirstTry signal was set whenever the escape hatch fired with `sourceTried >= 4` (4 Source-tier backups had real strippable markers at probe time), but didn't account for whether actual SSAI segments were *delivered* during the break. On CSAI-only-but-marked channels the Source-tier m3u8s contain real `,stitched-ad` segments yet the actual break is delivered via Twitch's CSAI path — escape hatch fires, autoplay commits, but the break ends `stripped 0`. Carrying the signal forward caused FastAutoplay to engage on the next break, committing autoplay 360p first-try and forcing a 10s post-escape Source restore reload on every break (field-observed). Now: when a break ends CSAI-only (`stripped 0`), clear `LastBreakUsedEscapeHatch`. Logs `[AD DEBUG] Clearing LastBreakUsedEscapeHatch — break ended CSAI-only (stripped 0), no real SSAI confirmed`. Confirmed real-SSAI breaks (`stripped > 0`) still arm the signal. Loading circle on emongg-style channels reduced from "every break" to "first break of an SSAI-uniform sequence" (vaft) (#TBD)
+
 ## v66.4.0 (2026-05-09)
 
 ### Bug Fixes

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      66.4.0
+// @version      66.5.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 77;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 78;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -1479,6 +1479,19 @@
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
                     streamInfo.IsUsingModifiedM3U8 = false;
+                    // Clear FastAutoplayFirstTry signal when the break ended CSAI-only:
+                    // even if 4 Source-tier backups had real strippable markers at probe
+                    // time (sourceTried >= 4 → set the flag at autoplay commit), 0 stripped
+                    // proves no real SSAI was actually delivered through MSE this break.
+                    // Carrying the flag forward causes FastAutoplay to engage on the next
+                    // break, committing autoplay 360p first-try and forcing the post-escape
+                    // restore reload — visible loading circle on every break of a CSAI-only-
+                    // but-marked channel (emongg). Only confirmed real-SSAI breaks (stripped
+                    // > 0) should arm the signal for the next break.
+                    if (streamInfo.LastBreakUsedEscapeHatch) {
+                        console.log('[AD DEBUG] Clearing LastBreakUsedEscapeHatch — break ended CSAI-only (stripped 0), no real SSAI confirmed');
+                        streamInfo.LastBreakUsedEscapeHatch = false;
+                    }
                     // Reload requirement when a backup was committed during the break:
                     //   - autoplay (360p): MUST reload — autoplay-scoped access token only
                     //     serves the 360p variant ladder, so we need a fresh access token to
