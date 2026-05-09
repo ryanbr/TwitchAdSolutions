@@ -54,6 +54,8 @@ twitch-videoad.js text/javascript
         // prefixed so we don't re-introduce the PR #120 false-positive from bare
         // 'stitched' substring match.
         scope.AD_SIGNIFIERS = ['stitched-ad', 'EXT-X-CUE-OUT', 'twitch-stitched', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"'];
+        // Confirmed session/source metadata, never ad markers — filter from candidate log.
+        scope.KNOWN_NON_AD_SIGNIFIERS = ['twitch-session', 'twitch-stream-source'];
         scope.AD_SEGMENT_URL_PATTERNS = ['/adsquared/', '/_404/', '/processing'];
         // Precompiled regexes shared across the stripAdSegments hot path. Declared
         // here (serialized into the worker blob with declareOptions) so literals
@@ -579,7 +581,10 @@ twitch-videoad.js text/javascript
             // Substring check (not exact): a candidate is "known" if any AD_SIGNIFIER
             // appears within it. This handles prefix signifiers like 'twitch-stitched'
             // covering 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"' etc.
-            const unknown = [...candidates].filter(c => !AD_SIGNIFIERS.some(s => c.includes(s)));
+            const unknown = [...candidates].filter(c =>
+                !AD_SIGNIFIERS.some(s => c.includes(s)) &&
+                !KNOWN_NON_AD_SIGNIFIERS.some(s => c.includes(s))
+            );
             if (unknown.length > 0) {
                 streamInfo.HasLoggedUnknownSignifiers = true;
                 console.log('[AD DEBUG] Potential ad markers seen but not in AD_SIGNIFIERS: ' + unknown.join(', ') + ' (candidates for future inclusion)');
@@ -897,7 +902,7 @@ twitch-videoad.js text/javascript
         return textStr;
     }
     function hookWorkerFetch() {
-        console.log('hookWorkerFetch (video-swap-new)');
+        console.log('[AD DEBUG] hookWorkerFetch (video-swap-new)');
         const realFetch = fetch;
         fetch = async function(url, options) {
             if (typeof url === 'string') {
@@ -1199,7 +1204,7 @@ twitch-videoad.js text/javascript
                             }
                         }
                         if (replacedPlayerType) {
-                            console.log(`Replaced '${replacedPlayerType}' player type with '${OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE}' player type`);
+                            console.log(`[AD DEBUG] Replaced '${replacedPlayerType}' player type with '${OPT_FORCE_ACCESS_TOKEN_PLAYER_TYPE}' player type`);
                             init.body = JSON.stringify(newBody);
                         }
                     }
