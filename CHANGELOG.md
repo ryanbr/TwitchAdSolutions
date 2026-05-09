@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v66.3.0 (2026-05-09)
+
+### Bug Fixes
+- **Avoid autoplay-360p escape hatch on CSAI-only-but-marked breaks** — on channels like emongg / sinatraa where the m3u8 contains ad markers (DATERANGE/CUE-OUT) but no actual ad segments to strip, the backup search would treat each Source-tier backup as ad-laden (because `hasAdTags()` matched the markers), exhaust all 4 Source types, and fall through to the `PreferLowQualityBackup` escape hatch — committing autoplay 360p. After the break ended with `stripped 0` (recognized as CSAI-only), a post-escape hard reload fired to restore Source quality, producing a visible loading-circle. New `hasStrippableAdSegments()` helper mirrors the per-segment strip criteria (non-live `#EXTINF`, inside CUE-OUT, or matching `AdSegmentURLPatterns`); the backup-commit check now requires both `hasAdTags()` AND `hasStrippableAdSegments()` to reject a backup. On marked-but-empty backups, the FIRST Source-tier probe (`site`) commits immediately, no escape hatch fires, no post-escape reload. Real SSAI breaks (CUE-OUT-bracketed segments) behave identically to before. Side benefit: `LoggedBackupAdsByType` now only counts SSAI-confirmed contaminations, so the `sourceTried >= 4` signal driving `LastBreakUsedEscapeHatch` (FastAutoplayFirstTry trigger) is also more accurate (vaft) (#TBD)
+
 ## v66.1.0 (2026-05-09)
 
 ### Bug Fixes

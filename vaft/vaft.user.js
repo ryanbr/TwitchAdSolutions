@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      66.1.0
+// @version      66.3.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 74;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 76;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -320,6 +320,7 @@
                 const newBlobStr = `
                     const pendingFetchRequests = new Map();
                     ${hasAdTags.toString()}
+                    ${hasStrippableAdSegments.toString()}
                     ${getMatchedAdSignifiers.toString()}
                     ${stripAdSegments.toString()}
                     ${getStreamUrlForResolution.toString()}
@@ -665,6 +666,29 @@
     }
     function hasAdTags(textStr) {
         return AdSignifiers.some((s) => textStr.includes(s));
+    }
+    // Mirrors the per-segment strip criteria — non-live #EXTINF, inside CUE-OUT, or
+    // matching AdSegmentURLPatterns. Used by the backup-search loop to distinguish
+    // real SSAI breaks (segments that would actually be stripped) from "marked but
+    // empty" CSAI-only m3u8s (DATERANGE/CUE-OUT markers in headers but every #EXTINF
+    // is ',live'). On CSAI-only-but-marked channels this avoids exhausting the
+    // Source-tier probe and committing autoplay 360p via PreferLowQualityBackup,
+    // which then required a post-escape hard reload to restore quality (visible
+    // loading circle). Cheap single-pass scan; short-circuits on first match.
+    function hasStrippableAdSegments(textStr) {
+        let inCueOut = false;
+        const lines = textStr.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.includes('EXT-X-CUE-OUT')) inCueOut = true;
+            else if (line.includes('EXT-X-CUE-IN')) inCueOut = false;
+            else if (line.startsWith('#EXTINF') && i + 1 < lines.length) {
+                if (!line.includes(',live') || inCueOut) return true;
+                const segUrl = lines[i + 1];
+                if (typeof segUrl === 'string' && AdSegmentURLPatterns.some(p => segUrl.includes(p))) return true;
+            }
+        }
+        return false;
     }
     function getMatchedAdSignifiers(textStr) {
         return AdSignifiers.filter((s) => textStr.includes(s));
@@ -1232,8 +1256,13 @@
                                     if (playerType == FallbackPlayerType) {
                                         fallbackM3u8 = m3u8Text;
                                     }
-                                    if ((!hasAdTags(m3u8Text) && (SimulatedAdsDepth == 0 || playerTypeIndex >= SimulatedAdsDepth - 1)) || (!fallbackM3u8 && playerTypeIndex >= playerTypesToTry.length - 1)) {
-                                        if ((streamInfo.ConsecutiveAllStrippedPolls || 0) >= 1 && !hasAdTags(m3u8Text)) {
+                                    // Treat "marked but empty" CSAI-only m3u8s (DATERANGE/CUE-OUT
+                                    // markers in headers but no strippable segments) as clean — same
+                                    // player_type cycling commits a Source-tier backup instead of
+                                    // exhausting the probe loop and falling through to autoplay 360p.
+                                    const backupHasRealAds = hasAdTags(m3u8Text) && hasStrippableAdSegments(m3u8Text);
+                                    if ((!backupHasRealAds && (SimulatedAdsDepth == 0 || playerTypeIndex >= SimulatedAdsDepth - 1)) || (!fallbackM3u8 && playerTypeIndex >= playerTypesToTry.length - 1)) {
+                                        if ((streamInfo.ConsecutiveAllStrippedPolls || 0) >= 1 && !backupHasRealAds) {
                                             const prevType = streamInfo.LastCommittedBackupPlayerType;
                                             if (prevType && prevType !== playerType) {
                                                 console.log('[AD DEBUG] Cycle switched to different clean type (' + playerType + ', was ' + prevType + ') during freeze — recovered without reload');
@@ -1250,7 +1279,7 @@
                                         backupM3u8 = m3u8Text;
                                         break;
                                     }
-                                    if (hasAdTags(m3u8Text)) {
+                                    if (backupHasRealAds) {
                                         if (!streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType = new Set();
                                         if (!streamInfo.LoggedBackupAdsByType.has(playerType)) {
                                             streamInfo.LoggedBackupAdsByType.add(playerType);

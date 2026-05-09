@@ -32,7 +32,7 @@ uBlock files have `twitch-videoad.js text/javascript` as line 1 (not valid JS â€
 
 ## Versions
 
-Bump `@version` (userscript header) and `ourTwitchAdSolutionsVersion` together for functional changes. Current: vaft 66.1.0/74, video-swap-new 1.85/53, strip 1.9/26. Testing: vaft 630.0.0/630, video-swap-new -/618.
+Bump `@version` (userscript header) and `ourTwitchAdSolutionsVersion` together for functional changes. Current: vaft 66.3.0/76, video-swap-new 1.85/53, strip 1.9/26. Testing: vaft 630.0.0/630, video-swap-new -/618.
 
 ## localStorage Config
 
