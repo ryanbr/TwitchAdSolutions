@@ -776,7 +776,7 @@
         // no line-level state — it just flips hasStrippedAdSegments = true on first
         // match. One scan instead of N_lines * N_signifiers scans (~100x fewer
         // includes() calls on a typical 100-line m3u8).
-        if (!hasStrippedAdSegments && AdSignifiers.some((s) => textStr.includes(s))) {
+        if (!hasStrippedAdSegments && hasAdTags(textStr)) {
             hasStrippedAdSegments = true;
         }
         if (hasStrippedAdSegments) {
@@ -982,7 +982,6 @@
                     if (line.startsWith('#EXTINF') && lines.length > i + 1) {
                         if (!line.includes(',live') && !streamInfo.RequestedAds.has(lines[i + 1])) {
                             // Only request one .ts file per .m3u8 request to avoid making too many requests
-                            //console.log('Fetch ad .ts file');
                             streamInfo.RequestedAds.add(lines[i + 1]);
                             fetch(lines[i + 1]).then((response) => response.blob()).catch(() => {});
                             break;
@@ -1725,7 +1724,6 @@
                               playerBufferState.recoveryReloadUsed = false;
                               playerBufferState.userPauseIntent = false;
                               playerBufferState.loggedPauseIntent = false;
-                              //console.log('Channel changed to ' + channelName);
                           }
                       }
                     }
@@ -1744,7 +1742,6 @@
                     const videoEl = player.getHTMLVideoElement?.();
                     const videoCurrentTime = videoEl?.currentTime;
                     if (position !== undefined && bufferedPosition !== undefined) {
-                        //console.log('position:' + position + ' bufferDuration:' + bufferDuration + ' bufferPosition:' + bufferedPosition + ' state: ' + player.core?.state?.state + ' started: ' + playerBufferState.hasStreamStarted);
                         // NOTE: This could be improved. It currently lets the player fully eat the full buffer before it triggers pause/play
                         // Skip the buffer-stall check entirely while the <video> element isn't actively
                         // trying to play. Two states this catches:

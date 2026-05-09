@@ -519,7 +519,6 @@
                                                 const lowResInf = encodingsM3u8.match(new RegExp(`^.*(?=\n.*${lowResUrl})`, 'm'))?.[0];
                                                 if (!lowResInf) continue;
                                                 const lowResSettings = parseAttributes(lowResInf.substring(lowResInf.indexOf(':') + 1));
-                                                //console.log('map ' + resSettings['RESOLUTION'] + ' to ' + lowResSettings['RESOLUTION']);
                                                 const codecsKey = 'CODECS';
                                                 if (typeof resSettings[codecsKey] === 'string' && typeof lowResSettings[codecsKey] === 'string' &&
                                                     resSettings[codecsKey].length >= 3 && lowResSettings[codecsKey].length >= 3 &&
@@ -665,7 +664,7 @@
         // no line-level state — it just flips hasStrippedAdSegments = true on first
         // match. One scan instead of N_lines * N_signifiers scans (~100x fewer
         // includes() calls on a typical 100-line m3u8).
-        if (!hasStrippedAdSegments && AD_SIGNIFIERS.some((s) => textStr.includes(s))) {
+        if (!hasStrippedAdSegments && hasAdTags(textStr)) {
             hasStrippedAdSegments = true;
         }
         if (hasStrippedAdSegments) {
@@ -866,7 +865,6 @@
                                 if (line.startsWith('#EXTINF') && lines.length > i + 1) {
                                     if (!line.includes(LIVE_SIGNIFIER) && !streamInfo.RequestedAds.has(lines[i + 1])) {
                                         // Only request one .ts file per .m3u8 request to avoid making too many requests
-                                        //console.log('Fetch ad .ts file');
                                         streamInfo.RequestedAds.add(lines[i + 1]);
                                         fetch(lines[i + 1]).then((response) => response.blob()).catch(() => {});
                                         break;
