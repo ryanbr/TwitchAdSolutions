@@ -65,7 +65,7 @@
         // DATERANGE classes confirmed as session/source metadata over weeks of field
         // observation — surface as "candidates" otherwise. Filtered out by the candidate
         // logger so the diagnostic stays focused on genuinely new markers.
-        scope.KnownNonAdSignifiers = ['twitch-session', 'twitch-stream-source'];
+        scope.KnownNonAdSignifiers = ['twitch-session', 'twitch-stream-source', 'twitch-ad-quartile'];
         scope.AdSegmentURLPatterns = ['/adsquared/', '/_404/', '/processing'];
         // Precompiled regexes shared across the stripAdSegments hot path. Declared
         // here (serialized into the worker blob with declareOptions) so literals

@@ -55,7 +55,7 @@ twitch-videoad.js text/javascript
         // 'stitched' substring match.
         scope.AD_SIGNIFIERS = ['stitched-ad', 'EXT-X-CUE-OUT', 'twitch-stitched', 'EXT-X-DATERANGE:CLASS="twitch-maf-ad"', 'EXT-X-DATERANGE:CLASS="twitch-trigger"'];
         // Confirmed session/source metadata, never ad markers — filter from candidate log.
-        scope.KNOWN_NON_AD_SIGNIFIERS = ['twitch-session', 'twitch-stream-source'];
+        scope.KNOWN_NON_AD_SIGNIFIERS = ['twitch-session', 'twitch-stream-source', 'twitch-ad-quartile'];
         scope.AD_SEGMENT_URL_PATTERNS = ['/adsquared/', '/_404/', '/processing'];
         // Precompiled regexes shared across the stripAdSegments hot path. Declared
         // here (serialized into the worker blob with declareOptions) so literals
