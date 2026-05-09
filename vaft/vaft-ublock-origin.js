@@ -73,7 +73,6 @@ twitch-videoad.js text/javascript
             // 'autoplay' (360p) removed: when committed as cycle backup, the player gets stuck
             // in an endless loading circle after the CSAI-only path releases the backup —
             // autoplay variants don't transition cleanly back to main stream variants.
-            //'picture-by-picture-CACHED'//360p (-CACHED is an internal suffix and is removed)
         ];
         scope.FallbackPlayerType = 'site';// was 'embed' — site is more reliable when all Source types end up ad-laden
         scope.ForceAccessTokenPlayerType = 'popout';
@@ -1517,10 +1516,10 @@ twitch-videoad.js text/javascript
                 }
             }
         };
-        return gqlRequest(body, playerType);
+        return gqlRequest(body);
     }
     // Send a GQL request to Twitch via the main thread (workers can't make credentialed requests)
-    function gqlRequest(body, playerType) {
+    function gqlRequest(body) {
         if (!GQLDeviceID) {
             GQLDeviceID = '';
             const dcharacters = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -2219,7 +2218,7 @@ twitch-videoad.js text/javascript
         let hasLoggedHeaders = false;
         const realFetch = window.fetch;
         window.realFetch = realFetch;
-        window.fetch = maskAsNative(function(url, init, ...args) {
+        window.fetch = maskAsNative(function(url, init) {
             if (typeof url === 'string') {
                 if (url.includes('gql')) {
                     let deviceId = init.headers['X-Device-Id'];

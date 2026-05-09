@@ -1077,9 +1077,9 @@
                 }
             }
         };
-        return gqlRequest(body, playerType);
+        return gqlRequest(body);
     }
-    function gqlRequest(body, playerType) {
+    function gqlRequest(body) {
         if (!gql_device_id) {
             gql_device_id = '';
             const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -1178,7 +1178,7 @@
         let hasLoggedHeaders = false;
         const realFetch = window.fetch;
         window.realFetch = realFetch;
-        window.fetch = maskAsNative(function(url, init, ...args) {
+        window.fetch = maskAsNative(function(url, init) {
             if (typeof url === 'string') {
                 if (url.includes('gql')) {
                     let deviceId = init.headers['X-Device-Id'];
