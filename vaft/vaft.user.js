@@ -93,6 +93,7 @@
         scope.PreferLowQualityBackup = true;// Hybrid safety net for SSAI-heavy breaks: sticky escape hatch (fires after ~8s stuck in all-stripped state) + autoplay (360p) as last-resort backup when all Source types are ad-laden. Default on; set twitchAdSolutions_preferLowQualityBackup=false to disable.
         scope.FastAutoplayFirstTry = false;// On SSAI-uniform channels (warn / emongg / mande / slvm) where every break exhausts the Source-tier backup search, the iteration through 4 Source types takes ~1.5-2s of buffering before autoplay (360p) is committed via PreferLowQualityBackup escape hatch. When true, if the prior break committed autoplay-via-escape-hatch, prepend autoplay to position 0 of playerTypesToTry on the next break — autoplay wins on first probe (~340ms) instead of last-resort. Auto-resets when a Source-tier type wins (channel recovered). Opt-in via localStorage twitchAdSolutions_fastAutoplayFirstTry=true.
         scope.BackupSwapFirst = true;// On ad detect, immediately swap to a backup player-type m3u8 (TTV-AB-style). Avoids MediaSource mixing from strip activity — fewer loading circles in field. Cost: extra fetches on every ad break. Default on; set twitchAdSolutions_backupSwapFirst=false to disable.
+        scope.RecoverFromSilentMute = true;// On hard reload, if the element is already muted but vaft has successfully unmuted at any point earlier this session, treat it as a silent Twitch re-mute and recover via the backstop. Default on; set twitchAdSolutions_recoverFromSilentMute=false to disable (useful for users who deliberately mute mid-session).
         scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers)
         scope.AlwaysReloadPlayerOnAd = false;// Always pause/play when entering/leaving ads
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
@@ -1704,7 +1705,8 @@
         userPauseIntent: false,
         loggedPauseIntent: false,
         weJustPaused: 0,
-        inAdBreak: false
+        inAdBreak: false,
+        vaftEverUnmuted: false
     };
     // Poll the player state to detect and fix buffering caused by ad stream switching
     function monitorPlayerBuffering() {
@@ -2206,8 +2208,20 @@
             if (hardReload) {
                 try {
                     const v = document.querySelector('video');
-                    if (v && !v.muted) {
-                        v.muted = true;
+                    const wasInitiallyUnmuted = v && !v.muted;
+                    // Issue #200 fix: also set up restore+backstop when the element is already
+                    // muted IF vaft has successfully unmuted at any point earlier this session.
+                    // Strong signal of Twitch's silent re-mute pattern (confirmed via v633
+                    // diagnostic logs) rather than user-initiated mute. Without this, AFK
+                    // users come back to persistently-muted streams (Tgod1991 on v635). First-
+                    // session-mute users have vaftEverUnmuted=false → backstop never engages
+                    // → mute respected. Disabled by twitchAdSolutions_recoverFromSilentMute=
+                    // false for users who deliberately mute mid-session.
+                    const shouldRecover = playerBufferState.vaftEverUnmuted && RecoverFromSilentMute;
+                    if (v && (wasInitiallyUnmuted || shouldRecover)) {
+                        if (wasInitiallyUnmuted) {
+                            v.muted = true;
+                        }
                         // setSrc({isNewMediaPlayerInstance:true}) replaces the <video> element,
                         // so a listener on the original `v` never fires — events fire on the
                         // new element. Listen on document (capture phase) instead so we catch
@@ -2225,7 +2239,10 @@
                             document.removeEventListener('loadeddata', listener, true);
                             try {
                                 const cur = document.querySelector('video');
-                                if (cur) cur.muted = false;
+                                if (cur) {
+                                    cur.muted = false;
+                                    playerBufferState.vaftEverUnmuted = true;
+                                }
                             } catch {}
                         };
                         const listener = (e) => {
@@ -2247,12 +2264,22 @@
                                 const cur = document.querySelector('video');
                                 if (cur && cur.muted && !playerBufferState.userPauseIntent) {
                                     cur.muted = false;
+                                    playerBufferState.vaftEverUnmuted = true;
                                     console.log('[AD DEBUG] Hard reload backstop unmute fired — element was still muted at 5500ms (Twitch LS-restore likely re-muted post-canplay)');
                                 }
                             } catch {}
                         }, 5500);
                     }
                 } catch {}
+            }
+            // Set weJustPaused so the pause-listener filters out the MSE-teardown
+            // pause event that Twitch dispatches on the old <video> during setSrc.
+            // Without this, userPauseIntent would falsely flip to true during the
+            // reload window, blocking the 5500ms backstop's unmute on stuck-muted
+            // recovery (issue #200 follow-up). Reuses the existing 2s pause-listener
+            // guard.
+            if (hardReload) {
+                playerBufferState.weJustPaused = Date.now();
             }
             playerState.setSrc({ isNewMediaPlayerInstance: hardReload, refreshAccessToken: hardReload });
             postTwitchWorkerMessage('TriggeredPlayerReload');
@@ -2532,6 +2559,11 @@
         if (lsBackupSwapFirst === 'false') {
             BackupSwapFirst = false;
             console.log('[AD DEBUG] BackupSwapFirst disabled via localStorage — using sticky CSAI path (strip on native stream)');
+        }
+        const lsRecoverFromSilentMute = localStorage.getItem('twitchAdSolutions_recoverFromSilentMute');
+        if (lsRecoverFromSilentMute === 'false') {
+            RecoverFromSilentMute = false;
+            console.log('[AD DEBUG] RecoverFromSilentMute disabled via localStorage — hard-reload backstop respects already-muted state, mid-session manual mutes preserved across reloads');
         }
         const lsHideAdOverlay = localStorage.getItem('twitchAdSolutions_hideAdOverlay');
         if (lsHideAdOverlay === 'true') {

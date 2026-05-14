@@ -48,6 +48,7 @@ All read at init, injected into worker blob:
 - `twitchAdSolutions_preferLowQualityBackup` — hybrid mode (sticky escape hatch + autoplay last-resort backup), default `true`; set to `false` to disable (vaft only)
 - `twitchAdSolutions_backupSwapFirst` — on ad detect, immediately swap to backup player-type m3u8 (TTV-AB-style) instead of sticky CSAI strip. Default `true` as of v63.0.0; set to `false` for legacy strip-first path (vaft only)
 - `twitchAdSolutions_fastAutoplayFirstTry` — opt-in (default `false`). On SSAI-uniform channels (warn / emongg / mande / slvm) where every break exhausts the Source-tier backup search, prepend autoplay (360p) to position 0 of the iteration when the prior break committed autoplay via PreferLowQualityBackup escape hatch. Saves ~1.5s of probe-loop buffering. Auto-resets when a Source-tier type wins (channel recovered) so quality returns to full automatically (vaft only)
+- `twitchAdSolutions_recoverFromSilentMute` — opt-out (default `true`). On hard reload, if the element is already muted but vaft has successfully unmuted at any point earlier this session, recover via the 5500ms backstop (Twitch's silent re-mute pattern — issue #200). Disable via `'false'` if you deliberately mute mid-session and want that preserved across reloads. Users muted from session start are always respected (vaftEverUnmuted=false short-circuits the recovery check). vaft only.
 
 ## CSAI vs SSAI
 
