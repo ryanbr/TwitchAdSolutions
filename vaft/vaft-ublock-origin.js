@@ -2216,8 +2216,17 @@ twitch-videoad.js text/javascript
         });
     }
     async function handleWorkerFetchRequest(fetchRequest) {
+        // 5s AbortController timeout — bounds worst-case wait when Twitch GQL hangs.
+        // AbortError flows through the existing catch + FailedBackupPlayerTypes lockout.
+        const controller = new AbortController();
+        const timeoutMs = 5000;
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         try {
-            const response = await window.realFetch(fetchRequest.url, fetchRequest.options);
+            const response = await window.realFetch(fetchRequest.url, {
+                ...fetchRequest.options,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
             const responseBody = await response.text();
             const responseObject = {
                 id: fetchRequest.id,
@@ -2232,9 +2241,10 @@ twitch-videoad.js text/javascript
             };
             return responseObject;
         } catch (error) {
+            clearTimeout(timeoutId);
             return {
                 id: fetchRequest.id,
-                error: error.message
+                error: error.name === 'AbortError' ? 'GQL fetch timeout (' + (timeoutMs / 1000) + 's)' : error.message
             };
         }
     }
