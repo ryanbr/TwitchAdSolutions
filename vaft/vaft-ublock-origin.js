@@ -628,7 +628,7 @@ twitch-videoad.js text/javascript
         return newServerTime ? encodingsM3u8.replace(/(SERVER-TIME=")[0-9.]+"/, `SERVER-TIME="${newServerTime}"`) : encodingsM3u8;
     }
     function hasAdTags(textStr) {
-        return AdSignifiers.some((s) => textStr.includes(s));
+        return AdSignifiers.some((s) => s && textStr.includes(s));
     }
     function getMatchedAdSignifiers(textStr) {
         return AdSignifiers.filter((s) => textStr.includes(s));
@@ -664,8 +664,8 @@ twitch-videoad.js text/javascript
             // appears within it. This handles prefix signifiers like 'twitch-stitched'
             // covering 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"' etc.
             const unknown = [...candidates].filter(c =>
-                !AdSignifiers.some(s => c.includes(s)) &&
-                !KnownNonAdSignifiers.some(s => c.includes(s))
+                !AdSignifiers.some(s => s && c.includes(s)) &&
+                !KnownNonAdSignifiers.some(s => s && c.includes(s))
             );
             if (unknown.length > 0) {
                 streamInfo.HasLoggedUnknownSignifiers = true;
@@ -882,7 +882,7 @@ twitch-videoad.js text/javascript
             streamInfo.HasCheckedUnknownTags = true;
             const unknownAdTags = textStr.match(/#EXT[^:\n]*(?:ad|cue|scte|sponsor)[^:\n]*/gi);
             if (unknownAdTags) {
-                const unknown = unknownAdTags.filter(t => !AdSignifiers.some(s => t.includes(s)));
+                const unknown = unknownAdTags.filter(t => !AdSignifiers.some(s => s && t.includes(s)));
                 if (unknown.length > 0) {
                     console.log('[AD DEBUG] Unknown ad-related tags found: ' + [...new Set(unknown)].join(', '));
                 }

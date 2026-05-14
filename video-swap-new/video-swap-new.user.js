@@ -558,7 +558,7 @@
         return result;
     }
     function hasAdTags(textStr) {
-        return AD_SIGNIFIERS.some((s) => textStr.includes(s));
+        return AD_SIGNIFIERS.some((s) => s && textStr.includes(s));
     }
     function getMatchedAdSignifiers(textStr) {
         return AD_SIGNIFIERS.filter((s) => textStr.includes(s));
@@ -593,8 +593,8 @@
             // appears within it. This handles prefix signifiers like 'twitch-stitched'
             // covering 'EXT-X-DATERANGE:CLASS="twitch-stitched-ad"' etc.
             const unknown = [...candidates].filter(c =>
-                !AD_SIGNIFIERS.some(s => c.includes(s)) &&
-                !KNOWN_NON_AD_SIGNIFIERS.some(s => c.includes(s))
+                !AD_SIGNIFIERS.some(s => s && c.includes(s)) &&
+                !KNOWN_NON_AD_SIGNIFIERS.some(s => s && c.includes(s))
             );
             if (unknown.length > 0) {
                 streamInfo.HasLoggedUnknownSignifiers = true;
@@ -772,7 +772,7 @@
             streamInfo.HasCheckedUnknownTags = true;
             const unknownAdTags = textStr.match(/#EXT[^:\n]*(?:ad|cue|scte|sponsor)[^:\n]*/gi);
             if (unknownAdTags) {
-                const unknown = unknownAdTags.filter(t => !AD_SIGNIFIERS.some(s => t.includes(s)));
+                const unknown = unknownAdTags.filter(t => !AD_SIGNIFIERS.some(s => s && t.includes(s)));
                 if (unknown.length > 0) {
                     console.log('[AD DEBUG] Unknown ad-related tags found: ' + [...new Set(unknown)].join(', '));
                 }
