@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      66.1.0
+// @version      66.2.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 74;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 75;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -202,6 +202,9 @@
             HasCheckedUnknownTags: false,
             HasLoggedAdAttributes: false,
             HasLoggedUnknownSignifiers: false,
+            LoggedOfflineTransition: false,// Detection diagnostic: set when m3u8 transitions to offline-shape mid-session.
+            ConsecutiveTokenFetchFailures: 0,// Detection diagnostic: counter for consecutive failed access-token fetches across player types. Logged at threshold, reset on success.
+            LoggedTokenFailureStreak: false,// Once-per-streak guard for the threshold log.
         };
     }
     function maskAsNative(fn, name) {
@@ -921,6 +924,14 @@
             HasTriggeredPlayerReload = false;
             streamInfo.LastPlayerReload = Date.now();
         }
+        // Detection diagnostic: if Twitch shuts a stream down (anti-ad-block detection
+        // response observed in field reports), the m3u8 transitions to a stream-end shape
+        // — `EXT-X-ENDLIST` present and no `#EXTINF:` segment lines. Log once per stream
+        // session so users / bug reporters can include the transition timestamp in repros.
+        if (!streamInfo.LoggedOfflineTransition && textStr.includes('#EXT-X-ENDLIST') && !textStr.includes('#EXTINF:')) {
+            streamInfo.LoggedOfflineTransition = true;
+            console.log('[AD DEBUG] Stream ended / offline shape detected — m3u8 has #EXT-X-ENDLIST with no segments. Possible Twitch detection response, broadcaster ended stream, or natural end-of-broadcast');
+        }
         if (!streamInfo.HasCheckedUnknownTags) {
             streamInfo.HasCheckedUnknownTags = true;
             const unknownAdTags = textStr.match(/#EXT[^:\n]*(?:ad|cue|scte|sponsor)[^:\n]*/gi);
@@ -1199,12 +1210,12 @@
                                 if (!spat) {
                                     const errInfo = accessToken?.errors ? ' errors: ' + JSON.stringify(accessToken.errors).substring(0, 300) : '';
                                     console.log('[AD DEBUG] GQL response missing streamPlaybackAccessToken for ' + realPlayerType + '. Response keys: ' + JSON.stringify(Object.keys(accessToken || {})) + errInfo);
-                                    // Lockout for 15s so we don't re-hit this known-broken type every poll.
-                                    // Parity with the HTTP-error and exception paths above — this GQL-error path
-                                    // was the only failure mode that didn't mark FailedBackupPlayerTypes, causing
-                                    // ~34 identical retries per break on channels where embed/autoplay GQL
-                                    // consistently returns "server error" (field-observed on warn).
                                     streamInfo.FailedBackupPlayerTypes.set(realPlayerType, Date.now());
+                                    streamInfo.ConsecutiveTokenFetchFailures = (streamInfo.ConsecutiveTokenFetchFailures || 0) + 1;
+                                    if (streamInfo.ConsecutiveTokenFetchFailures >= 3 && !streamInfo.LoggedTokenFailureStreak) {
+                                        streamInfo.LoggedTokenFailureStreak = true;
+                                        console.log('[AD DEBUG] Token fetch failed ' + streamInfo.ConsecutiveTokenFetchFailures + ' times consecutively across player types — possible Twitch detection / integrity rotation / rate limiting');
+                                    }
                                     continue;
                                 }
                                 const urlInfo = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + streamInfo.ChannelName + '.m3u8' + streamInfo.UsherParams);
@@ -1213,6 +1224,9 @@
                                 const encodingsM3u8Response = await realFetch(urlInfo.href);
                                 if (encodingsM3u8Response.status === 200) {
                                     encodingsM3u8 = streamInfo.BackupEncodingsM3U8Cache[playerType] = await encodingsM3u8Response.text();
+                                    // Reset detection diagnostic counter on success — token fetched, m3u8 fetched.
+                                    streamInfo.ConsecutiveTokenFetchFailures = 0;
+                                    streamInfo.LoggedTokenFailureStreak = false;
                                 } else {
                                     console.log('[AD DEBUG] Usher HTTP ' + encodingsM3u8Response.status + ' for ' + realPlayerType);
                                 }
@@ -1221,10 +1235,20 @@
                                 try { errorBody = ' — ' + (await accessTokenResponse.text()).substring(0, 200); } catch {}
                                 console.log('[AD DEBUG] Access token HTTP ' + accessTokenResponse.status + ' for ' + realPlayerType + (accessTokenResponse.status === 403 ? ' (integrity: ' + (ClientIntegrityHeader ? 'present' : 'missing') + ')' : '') + errorBody);
                                 streamInfo.FailedBackupPlayerTypes.set(realPlayerType, Date.now());
+                                streamInfo.ConsecutiveTokenFetchFailures = (streamInfo.ConsecutiveTokenFetchFailures || 0) + 1;
+                                if (streamInfo.ConsecutiveTokenFetchFailures >= 3 && !streamInfo.LoggedTokenFailureStreak) {
+                                    streamInfo.LoggedTokenFailureStreak = true;
+                                    console.log('[AD DEBUG] Token fetch failed ' + streamInfo.ConsecutiveTokenFetchFailures + ' times consecutively across player types — possible Twitch detection / integrity rotation / rate limiting');
+                                }
                             }
                         } catch (err) {
                             console.log('[AD DEBUG] Access token failed for ' + realPlayerType + ': ' + err.message);
                             streamInfo.FailedBackupPlayerTypes.set(realPlayerType, Date.now());
+                            streamInfo.ConsecutiveTokenFetchFailures = (streamInfo.ConsecutiveTokenFetchFailures || 0) + 1;
+                            if (streamInfo.ConsecutiveTokenFetchFailures >= 3 && !streamInfo.LoggedTokenFailureStreak) {
+                                streamInfo.LoggedTokenFailureStreak = true;
+                                console.log('[AD DEBUG] Token fetch failed ' + streamInfo.ConsecutiveTokenFetchFailures + ' times consecutively across player types — possible Twitch detection / integrity rotation / rate limiting');
+                            }
                         }
                     }
                     if (encodingsM3u8) {

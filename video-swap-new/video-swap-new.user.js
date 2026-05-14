@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (video-swap-new)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      1.85
+// @version      1.86
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/video-swap-new/video-swap-new.user.js
 // @description  Multiple solutions for blocking Twitch ads (video-swap-new)
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 53;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 54;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: video-swap-new v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -127,6 +127,10 @@
             EarlyReloadTriggered: false,
             LastPlayerReload: 0,
             ReloadTimestamps: [],
+            // Detection diagnostics
+            LoggedOfflineTransition: false,
+            ConsecutiveTokenFetchFailures: 0,
+            LoggedTokenFailureStreak: false,
         };
     }
     function maskAsNative(fn, name) {
@@ -476,6 +480,11 @@
                         let errorBody = '';
                         try { errorBody = ' — ' + (await accessTokenResponse.text()).substring(0, 200); } catch {}
                         console.log('[AD DEBUG] Access token HTTP ' + accessTokenResponse.status + ' for ' + playerType + (accessTokenResponse.status === 403 ? ' (integrity: ' + (ClientIntegrityHeader ? 'present' : 'missing') + ')' : '') + errorBody);
+                        streamInfo.ConsecutiveTokenFetchFailures = (streamInfo.ConsecutiveTokenFetchFailures || 0) + 1;
+                        if (streamInfo.ConsecutiveTokenFetchFailures >= 3 && !streamInfo.LoggedTokenFailureStreak) {
+                            streamInfo.LoggedTokenFailureStreak = true;
+                            console.log('[AD DEBUG] Token fetch failed ' + streamInfo.ConsecutiveTokenFetchFailures + ' times consecutively across player types — possible Twitch detection / integrity rotation / rate limiting');
+                        }
                     }
                     if (accessTokenResponse != null && accessTokenResponse.status === 200) {
                         const accessToken = await accessTokenResponse.json();
@@ -487,6 +496,11 @@
                         if (!spat) {
                             const errInfo = accessToken?.errors ? ' errors: ' + JSON.stringify(accessToken.errors).substring(0, 300) : '';
                             console.log('[AD DEBUG] GQL response missing streamPlaybackAccessToken for ' + playerType + '. Response keys: ' + JSON.stringify(Object.keys(accessToken || {})) + errInfo);
+                            streamInfo.ConsecutiveTokenFetchFailures = (streamInfo.ConsecutiveTokenFetchFailures || 0) + 1;
+                            if (streamInfo.ConsecutiveTokenFetchFailures >= 3 && !streamInfo.LoggedTokenFailureStreak) {
+                                streamInfo.LoggedTokenFailureStreak = true;
+                                console.log('[AD DEBUG] Token fetch failed ' + streamInfo.ConsecutiveTokenFetchFailures + ' times consecutively across player types — possible Twitch detection / integrity rotation / rate limiting');
+                            }
                             continue;
                         }
                         const urlInfo = new URL('https://usher.ttvnw.net/api/' + (V2API ? 'v2/' : '') + 'channel/hls/' + streamInfo.ChannelName + '.m3u8' + streamInfo.UsherParams);
@@ -497,6 +511,8 @@
                             console.log('[AD DEBUG] Usher HTTP ' + encodingsM3u8Response.status + ' for ' + playerType);
                         }
                         if (encodingsM3u8Response != null && encodingsM3u8Response.status === 200) {
+                            streamInfo.ConsecutiveTokenFetchFailures = 0;
+                            streamInfo.LoggedTokenFailureStreak = false;
                             let encodingsM3u8 = await encodingsM3u8Response.text();
                             const streamM3u8Url = getStreamUrlForResolution(encodingsM3u8, resolutionInfo);
                             const streamM3u8Response = await realFetch(streamM3u8Url);
@@ -764,6 +780,10 @@
             return textStr;
         }
         streamInfo.LastSeenAt = Date.now();
+        if (!streamInfo.LoggedOfflineTransition && textStr.includes('#EXT-X-ENDLIST') && !textStr.includes('#EXTINF:')) {
+            streamInfo.LoggedOfflineTransition = true;
+            console.log('[AD DEBUG] Stream ended / offline shape detected — m3u8 has #EXT-X-ENDLIST with no segments. Possible Twitch detection response, broadcaster ended stream, or natural end-of-broadcast');
+        }
         const currentResolution = streamInfo.Urls.get(url);
         if (!currentResolution) {
             return textStr;

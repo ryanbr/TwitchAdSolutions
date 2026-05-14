@@ -1,5 +1,11 @@
 ## Unreleased
 
+## v66.2.0 (2026-05-14)
+
+### Detection Improvements
+- **Offline / channel-ended m3u8 shape detector** — log once per stream when the m3u8 transitions to a final shape (`#EXT-X-ENDLIST` present, no `#EXTINF:` segments). Distinguishes natural broadcast end from possible Twitch detection responses where the access token suddenly returns no segments. Helps disambiguate "is the stream really over?" from "did Twitch revoke our session mid-watch?" in field logs (vaft + video-swap-new) (#209)
+- **Consecutive token-fetch failure tracker** — count consecutive failures across the backup player-type fetch loop (HTTP non-200, GQL response missing `streamPlaybackAccessToken`, exception during fetch). When the streak reaches 3+ — meaning none of the configured player types produced a usable Usher m3u8 in a single backup-search cycle — log once with the count. Resets to zero on the next Usher 200. Captures the signal for detection / integrity-rotation / rate-limiting events that previously only surfaced as generic "Found ads, switch to backup" timing anomalies or a silent fallthrough into autoplay (vaft + video-swap-new) (#209)
+
 ## v66.1.0 (2026-05-09)
 
 ### Bug Fixes
