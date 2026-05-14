@@ -1,5 +1,14 @@
 ## Unreleased
 
+## v66.3.0 (2026-05-14)
+
+### Bug Fixes
+- **Worker early-reload state wedged after main-thread healthy-skip** — when the main thread skipped a reload because the player was healthy (`Skipping reload — player healthy (readyState=..., playing, latency=...s)` path), it returned silently without notifying the worker. The worker's `EarlyReloadTriggered` / `EarlyReloadAwaitingResult` flags stayed set, blocking subsequent early-reload firings in the same break even if a later poll legitimately called for one. Now sends `postTwitchWorkerMessage('ReloadSkipped')` before returning; worker-side handler clears the flags on receipt and decrements `EarlyReloadCount` so budget is preserved. Mirrors the testing variant's behavior. Logs `[AD DEBUG] Reload skipped by main thread (player healthy) — early reload state cleared, can retry` when the worker clears (vaft) (#NN)
+
+### Diagnostics
+- **Hard reload backstop SKIPPED log** — when the 5500ms backstop sees the element still muted but `userPauseIntent` is set, it silently no-ops to preserve user mute intent. Previously this branch produced no log, making it indistinguishable from "backstop never armed" in field traces. Now logs `[AD DEBUG] Hard reload backstop SKIPPED — element muted at 5500ms but userPauseIntent set (likely false-positive pause event during MSE teardown — issue #200 follow-up)` so future stuck-mute reports can be diagnosed conclusively (vaft) (#NN)
+- **Backstop unmute fired log includes initial-mute state** — `Hard reload backstop unmute fired — element was still muted at 5500ms` now annotated with `(initial: unmuted, we pre-muted)` vs `(initial: already-muted on entry — recovering from silent Twitch re-mute)` to immediately distinguish the standard pre-mute path from the issue #200 recovery path in logs (vaft) (#NN)
+
 ## v66.2.0 (2026-05-14)
 
 ### Detection Improvements

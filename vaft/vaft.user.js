@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      66.2.0
+// @version      66.3.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 75;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 76;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -401,6 +401,26 @@
                             }
                         } else if (e.data.key == 'TriggeredPlayerReload') {
                             HasTriggeredPlayerReload = true;
+                        } else if (e.data.key == 'ReloadSkipped') {
+                            // Main thread refused the reload (player healthy) — clear the
+                            // early-reload flags so we can re-fire if the player later stalls.
+                            // Without this clear, the worker's EarlyReloadTriggered /
+                            // EarlyReloadAwaitingResult flags stay set after a healthy-skip,
+                            // blocking subsequent early-reload firings in the same break even
+                            // if a later poll legitimately calls for one.
+                            let cleared = false;
+                            for (const channel in StreamInfos) {
+                                const si = StreamInfos[channel];
+                                if (si && si.EarlyReloadTriggered) {
+                                    si.EarlyReloadTriggered = false;
+                                    si.EarlyReloadAwaitingResult = false;
+                                    si.EarlyReloadCount = Math.max(0, (si.EarlyReloadCount || 0) - 1);
+                                    cleared = true;
+                                }
+                            }
+                            if (cleared) {
+                                console.log('[AD DEBUG] Reload skipped by main thread (player healthy) — early reload state cleared, can retry');
+                            }
                         } else if (e.data.key == 'SimulateAds') {
                             SimulatedAdsDepth = e.data.value;
                             console.log('SimulatedAdsDepth: ' + SimulatedAdsDepth);
@@ -2162,6 +2182,7 @@
                     console.log('[AD DEBUG] Player playing but ' + latencySec.toFixed(1) + 's behind live — proceeding with reload to reset latency');
                 } else {
                     console.log('[AD DEBUG] Skipping reload — player healthy (readyState=' + video.readyState + ', playing, latency=' + latencySec.toFixed(1) + 's)');
+                    postTwitchWorkerMessage('ReloadSkipped');
                     return;
                 }
             }
@@ -2262,10 +2283,14 @@
                         setTimeout(() => {
                             try {
                                 const cur = document.querySelector('video');
-                                if (cur && cur.muted && !playerBufferState.userPauseIntent) {
-                                    cur.muted = false;
-                                    playerBufferState.vaftEverUnmuted = true;
-                                    console.log('[AD DEBUG] Hard reload backstop unmute fired — element was still muted at 5500ms (Twitch LS-restore likely re-muted post-canplay)');
+                                if (cur && cur.muted) {
+                                    if (playerBufferState.userPauseIntent) {
+                                        console.log('[AD DEBUG] Hard reload backstop SKIPPED — element muted at 5500ms but userPauseIntent set (likely false-positive pause event during MSE teardown — issue #200 follow-up)');
+                                    } else {
+                                        cur.muted = false;
+                                        playerBufferState.vaftEverUnmuted = true;
+                                        console.log('[AD DEBUG] Hard reload backstop unmute fired — element was still muted at 5500ms (initial: ' + (wasInitiallyUnmuted ? 'unmuted, we pre-muted' : 'already-muted on entry — recovering from silent Twitch re-mute') + ')');
+                                    }
                                 }
                             } catch {}
                         }, 5500);
