@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 77;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 78;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -79,7 +79,7 @@ twitch-videoad.js text/javascript
         scope.FallbackPlayerType = 'site';// was 'embed' — site is more reliable when all Source types end up ad-laden
         scope.ForceAccessTokenPlayerType = 'popout';
         scope.PreferLowQualityBackup = true;// Hybrid safety net for SSAI-heavy breaks: sticky escape hatch (fires after ~8s stuck in all-stripped state) + autoplay (360p) as last-resort backup when all Source types are ad-laden. Default on; set twitchAdSolutions_preferLowQualityBackup=false to disable.
-        scope.FastAutoplayFirstTry = false;// On SSAI-uniform channels, prepend autoplay to the iteration when the prior break exhausted all 4 Source types. Saves ~1.5s of probe buffering. Auto-resets on Source-tier recovery. Opt-in: twitchAdSolutions_fastAutoplayFirstTry=true.
+        scope.FastAutoplayFirstTry = true;// Prepend autoplay (360p) to the iteration when the prior break exhausted all 4 Source types — saves ~1.5s of probe buffering on every break. Auto-resets on Source-tier recovery. Default on as of v67.1.0 (every observed channel is CSAI-only-but-marked). Opt-out: twitchAdSolutions_fastAutoplayFirstTry=false.
         scope.BackupSwapFirst = true;// On ad detect, immediately swap to a backup player-type m3u8 (TTV-AB-style). Avoids MediaSource mixing from strip activity — fewer loading circles in field. Cost: extra fetches on every ad break. Default on; set twitchAdSolutions_backupSwapFirst=false to disable.
         scope.RecoverFromSilentMute = true;// On hard reload, if the element is already muted but vaft has successfully unmuted at any point earlier this session, treat it as a silent Twitch re-mute and recover via the backstop. Default on; set twitchAdSolutions_recoverFromSilentMute=false to disable (useful for users who deliberately mute mid-session).
         scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers)
@@ -172,6 +172,7 @@ twitch-videoad.js text/javascript
             EarlyReloadAwaitingResult: false,
             EscapeHatchFired: false,
             LastBreakUsedEscapeHatch: false,// FastAutoplayFirstTry signal — set when a break commits autoplay via PreferLowQualityBackup escape hatch. Reset when a Source-tier type wins.
+            FastAutoplayConsecutive: 0,// Count of consecutive fast-autoplay wins — triggers periodic re-probe to catch channel recovery.
             LastPlayerReload: 0,
             ReloadTimestamps: [],
             HasCheckedUnknownTags: false,
@@ -1109,15 +1110,27 @@ twitch-videoad.js text/javascript
                 }
             }
             // FastAutoplayFirstTry: prepend autoplay when prior break exhausted Source-tier
-            // (SSAI-uniform signal). Saves ~1.5s of probe buffering.
+            // (SSAI-uniform signal). Saves ~1.5s of probe buffering. Periodic re-probe every
+            // Nth consecutive fast-autoplay win catches channel recovery (Twitch reversing
+            // universal CSAI delivery) — without it, channel stays on 360p for the session.
             if (FastAutoplayFirstTry && streamInfo.LastBreakUsedEscapeHatch && PreferLowQualityBackup) {
-                const autoplayIdx = playerTypesToTry.indexOf('autoplay');
-                if (autoplayIdx > 0) {
-                    playerTypesToTry.splice(autoplayIdx, 1);
-                    playerTypesToTry.unshift('autoplay');
-                    if (!streamInfo.LoggedFastAutoplayThisBreak) {
-                        streamInfo.LoggedFastAutoplayThisBreak = true;
-                        console.log('[AD DEBUG] Fast-autoplay first-try — prior break exhausted Source-tier; probing autoplay first');
+                const FastAutoplayReprobeInterval = 5;
+                const consecutive = streamInfo.FastAutoplayConsecutive || 0;
+                if (consecutive >= FastAutoplayReprobeInterval) {
+                    streamInfo.FastAutoplayConsecutive = 0;
+                    if (!streamInfo.LoggedFastAutoplayReprobeThisBreak) {
+                        streamInfo.LoggedFastAutoplayReprobeThisBreak = true;
+                        console.log('[AD DEBUG] Fast-autoplay re-probe — testing Source-tier after ' + consecutive + ' consecutive fast-autoplay breaks (channel-recovery check)');
+                    }
+                } else {
+                    const autoplayIdx = playerTypesToTry.indexOf('autoplay');
+                    if (autoplayIdx > 0) {
+                        playerTypesToTry.splice(autoplayIdx, 1);
+                        playerTypesToTry.unshift('autoplay');
+                        if (!streamInfo.LoggedFastAutoplayThisBreak) {
+                            streamInfo.LoggedFastAutoplayThisBreak = true;
+                            console.log('[AD DEBUG] Fast-autoplay first-try — prior break exhausted Source-tier; probing autoplay first');
+                        }
                     }
                 }
             }
@@ -1319,6 +1332,8 @@ twitch-videoad.js text/javascript
                         const sourceTried = streamInfo.LoggedBackupAdsByType?.size || 0;
                         if (sourceTried === 0) {
                             console.log('[AD DEBUG] Autoplay backup committed — 360p pinned from prior break (PreferLowQualityBackup)');
+                            // Fast-autoplay won without testing Source-tier — increment re-probe counter
+                            streamInfo.FastAutoplayConsecutive = (streamInfo.FastAutoplayConsecutive || 0) + 1;
                         } else {
                             console.log('[AD DEBUG] Autoplay backup committed — 360p fallback after ' + sourceTried + ' Source type(s) ad-laden (PreferLowQualityBackup)');
                         }
@@ -1327,10 +1342,13 @@ twitch-videoad.js text/javascript
                         // doesn't add new info.
                         if (FastAutoplayFirstTry && sourceTried >= 4) {
                             streamInfo.LastBreakUsedEscapeHatch = true;
+                            // Full probe just ran — reset re-probe counter
+                            streamInfo.FastAutoplayConsecutive = 0;
                         }
                     } else if (FastAutoplayFirstTry && backupPlayerType !== 'autoplay') {
-                        // Source-tier won — channel recovered, reset signal.
+                        // Source-tier won — channel recovered, reset signal + re-probe counter.
                         streamInfo.LastBreakUsedEscapeHatch = false;
+                        streamInfo.FastAutoplayConsecutive = 0;
                     }
                 }
             } else if (backupM3u8 && !streamInfo.IsShowingAd) {
@@ -1452,6 +1470,7 @@ twitch-videoad.js text/javascript
                 streamInfo.HasLoggedAdAttributes = false;
                 streamInfo.HasLoggedUnknownSignifiers = false;
                 streamInfo.LoggedFastAutoplayThisBreak = false;
+                streamInfo.LoggedFastAutoplayReprobeThisBreak = false;
                 // CSAI-only ad break: no segments were stripped — skip reload entirely.
                 if (!hadStrippedSegments) {
                     console.log('[AD DEBUG] CSAI-only ad break (stripped 0) — clearing backup without player action');
@@ -1468,7 +1487,7 @@ twitch-videoad.js text/javascript
                     if (streamInfo.LastCommittedBackupPlayerType) {
                         const isAutoplay = streamInfo.LastCommittedBackupPlayerType === 'autoplay';
                         const reason = isAutoplay ? 'autoplay (360p) — restoring Source quality' : streamInfo.LastCommittedBackupPlayerType + ' — flushing MediaSource to prevent A/V desync accumulation';
-                        console.log('[AD DEBUG] Post-escape reload: ' + reason);
+                        console.log('[AD DEBUG] End-of-break reload: ' + reason);
                         streamInfo.LastPlayerReload = Date.now();
                         if (!streamInfo.ReloadTimestamps) streamInfo.ReloadTimestamps = [];
                         streamInfo.ReloadTimestamps.push(Date.now());
@@ -2465,9 +2484,9 @@ twitch-videoad.js text/javascript
             console.log('[AD DEBUG] PreferLowQualityBackup disabled via localStorage — sticky CSAI path only, no autoplay fallback or escape hatch');
         }
         const lsFastAutoplay = localStorage.getItem('twitchAdSolutions_fastAutoplayFirstTry');
-        if (lsFastAutoplay === 'true') {
-            FastAutoplayFirstTry = true;
-            console.log('[AD DEBUG] FastAutoplayFirstTry enabled via localStorage — autoplay tried first on breaks following an autoplay-via-escape-hatch commit');
+        if (lsFastAutoplay === 'false') {
+            FastAutoplayFirstTry = false;
+            console.log('[AD DEBUG] FastAutoplayFirstTry disabled via localStorage — full Source-tier probe on every break');
         }
         const lsBackupSwapFirst = localStorage.getItem('twitchAdSolutions_backupSwapFirst');
         if (lsBackupSwapFirst === 'false') {

@@ -1,5 +1,13 @@
 ## Unreleased
 
+## v67.1.0 (2026-05-15)
+
+### Behavior Changes
+- **`FastAutoplayFirstTry` now default-on** — previously opt-in via `twitchAdSolutions_fastAutoplayFirstTry=true`. Field surveillance from 2026-05 (memory: `project_all_channels_csai_only_marked`) confirmed every observed channel ends every ad break with `stripped 0` — Twitch migrated to CSAI delivery while keeping SSAI markers, so the "real SSAI" channel class where Source-tier backups occasionally succeed appears to no longer exist. With Source-tier exhaustion on every break, the full probe loop wastes ~1.5-2s of buffering on every break before committing to autoplay 360p via the escape hatch — `FastAutoplayFirstTry` skips that loop when the prior break already exhausted Source-tier. Auto-reset semantics unchanged: if Twitch ever brings back non-ad-laden Source backups and one wins, `LastBreakUsedEscapeHatch` clears and the next break runs the full probe again. Set `twitchAdSolutions_fastAutoplayFirstTry=false` to force the legacy full-probe path on every break (vaft) (#NN)
+
+### Robustness
+- **Fast-autoplay periodic re-probe** — companion to the default-on flip above. Once a channel hits fast-autoplay, vaft would otherwise never re-test Source-tier for the rest of the session — if Twitch ever reverses universal CSAI delivery mid-session, the user would stay on 360p until they switched channels or refreshed. New `FastAutoplayConsecutive` counter increments on each fast-autoplay win (autoplay committed without testing Source-tier). After 5 consecutive wins, the next break forces a full Source-tier probe to detect channel recovery. If Source-tier still all ad-laden → autoplay wins as last-resort, `LastBreakUsedEscapeHatch` re-asserts, counter resets, fast-autoplay resumes. If Source-tier wins → flag clears, normal iteration resumes. Costs ~1.5-2s of probe-loop once every ~5 breaks (~25-50min interval at typical break density). Logs `[AD DEBUG] Fast-autoplay re-probe — testing Source-tier after N consecutive fast-autoplay breaks (channel-recovery check)` when it fires (vaft) (#NN)
+
 ## v67.0.0 (2026-05-14)
 
 ### Bug Fixes
