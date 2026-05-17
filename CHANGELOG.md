@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v68.1.0 (2026-05-18)
+
+### Performance
+- **Ad-completion spoof deferred off the playlist critical path** — `notifyAdComplete` ran synchronously inside the worker's m3u8 processing on every ad-laden poll. Its `matchAll` over the playlist + per-ad `parseAttributes` loop + 6× `JSON.stringify` delayed returning the modified m3u8 to the player, manifesting as ad-break stutter. Now wrapped in `setTimeout(…, 0)` so the playlist is returned immediately and the spoof runs next tick — the GQL beacons aren't time-critical so the one-tick delay is irrelevant to Twitch. Ported back from the GosuDRM/TTV-AB v8.0.0 field finding (their commit `68fad6c`, "defer ad spoofing beacons to next tick to prevent player stutter") on the same spoof code TwitchAdSolutions contributed upstream. `notifyAdComplete`'s own internal try/catch is unchanged (vaft) (#NN)
+
 ## v68.0.0 (2026-05-17)
 
 ### Detection Evasion

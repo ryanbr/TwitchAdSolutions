@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      68.0.0
+// @version      68.1.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 81;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 82;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -1170,7 +1170,11 @@
             // surface one ad per poll — notifyAdComplete dedups via SpoofedAdIds so
             // each ad is spoofed once across the break (full N/N coverage).
             if (!DisableAdSpoofing) {
-                notifyAdComplete(textStr, streamInfo);
+                // Defer off the playlist critical path — synchronous matchAll + parse +
+                // JSON.stringify here delays the modified-m3u8 return to the player
+                // (ad-break stutter). Next tick is fine; spoof beacons aren't time-critical.
+                // (GosuDRM TTV-AB v8.0.0 field finding on this same spoof code.)
+                setTimeout(() => notifyAdComplete(textStr, streamInfo), 0);
             }
             if (!streamInfo.IsMidroll) {
                 const lines = textStr.split(/\r?\n/);
