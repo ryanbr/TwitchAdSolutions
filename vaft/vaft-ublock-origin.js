@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 78;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 79;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -81,6 +81,7 @@ twitch-videoad.js text/javascript
         scope.PreferLowQualityBackup = true;// Hybrid safety net for SSAI-heavy breaks: sticky escape hatch (fires after ~8s stuck in all-stripped state) + autoplay (360p) as last-resort backup when all Source types are ad-laden. Default on; set twitchAdSolutions_preferLowQualityBackup=false to disable.
         scope.FastAutoplayFirstTry = true;// Prepend autoplay (360p) to the iteration when the prior break exhausted all 4 Source types — saves ~1.5s of probe buffering on every break. Auto-resets on Source-tier recovery. Default on as of v67.1.0 (every observed channel is CSAI-only-but-marked). Opt-out: twitchAdSolutions_fastAutoplayFirstTry=false.
         scope.BackupSwapFirst = true;// On ad detect, immediately swap to a backup player-type m3u8 (TTV-AB-style). Avoids MediaSource mixing from strip activity — fewer loading circles in field. Cost: extra fetches on every ad break. Default on; set twitchAdSolutions_backupSwapFirst=false to disable.
+        scope.DisableAdSpoofing = false;// On ad-detect, fire GQL ad-tracking beacons that Twitch's player would have sent if the ad played. May reduce detection escalation. Default on; set twitchAdSolutions_disableAdSpoofing=true to disable.
         scope.RecoverFromSilentMute = true;// On hard reload, if the element is already muted but vaft has successfully unmuted at any point earlier this session, treat it as a silent Twitch re-mute and recover via the backstop. Default on; set twitchAdSolutions_recoverFromSilentMute=false to disable (useful for users who deliberately mute mid-session).
         scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers)
         scope.AlwaysReloadPlayerOnAd = false;// Always pause/play when entering/leaving ads
@@ -300,6 +301,7 @@ twitch-videoad.js text/javascript
                     const pendingFetchRequests = new Map();
                     ${hasAdTags.toString()}
                     ${getMatchedAdSignifiers.toString()}
+                    ${notifyAdComplete.toString()}
                     ${stripAdSegments.toString()}
                     ${getStreamUrlForResolution.toString()}
                     ${processM3U8.toString()}
@@ -326,6 +328,7 @@ twitch-videoad.js text/javascript
                     PreferLowQualityBackup = ${PreferLowQualityBackup};
                     FastAutoplayFirstTry = ${FastAutoplayFirstTry};
                     BackupSwapFirst = ${BackupSwapFirst};
+                    DisableAdSpoofing = ${DisableAdSpoofing};
                     ForceAccessTokenPlayerType = '${ForceAccessTokenPlayerType}';
                     GQLDeviceID = ${GQLDeviceID ? "'" + GQLDeviceID + "'" : null};
                     AuthorizationHeader = ${AuthorizationHeader ? "'" + AuthorizationHeader + "'" : undefined};
@@ -653,6 +656,92 @@ twitch-videoad.js text/javascript
     function hasAdTags(textStr) {
         return AdSignifiers.some((s) => s && textStr.includes(s));
     }
+    // Spoof ad completion to Twitch's GQL endpoint when an ad break is detected.
+    // Mimics the impression/quartile/pod-complete beacons Twitch's player would have sent
+    // if the ad actually played. May reduce detection escalation.
+    function notifyAdComplete(textStr) {
+        try {
+            // Each ad in a pod has its own DATERANGE line with own RADS-token + metadata.
+            // Iterate per-ad — submitting ad #1's token for positions 2..N could be flagged.
+            const matches = [...textStr.matchAll(/#EXT-X-DATERANGE:(ID="stitched-ad-[^\n]+)\n/g)];
+            if (matches.length === 0) {
+                if (!notifyAdComplete.loggedNoMatch) {
+                    notifyAdComplete.loggedNoMatch = true;
+                    const dateRangeLine = textStr.match(/#EXT-X-DATERANGE:[^\n]{0,200}/);
+                    console.log('[AD DEBUG] notifyAdComplete: no stitched-ad DATERANGE match. Sample DATERANGE: ' + (dateRangeLine ? dateRangeLine[0] : 'none found'));
+                }
+                return;
+            }
+            const podLength = matches.length;
+            let spoofedCount = 0;
+            let firstRollType = '';
+            for (let i = 0; i < podLength; i++) {
+                const attr = parseAttributes(matches[i][1]);
+                const radToken = attr['X-TV-TWITCH-AD-RADS-TOKEN'];
+                if (!radToken) {
+                    if (i === 0 && !notifyAdComplete.loggedNoToken) {
+                        notifyAdComplete.loggedNoToken = true;
+                        console.log('[AD DEBUG] notifyAdComplete: matched DATERANGE but no RADS token. Attributes: ' + Object.keys(attr).join(', '));
+                    }
+                    continue;
+                }
+                const rollType = (attr['X-TV-TWITCH-AD-ROLL-TYPE'] || '').toLowerCase();
+                if (i === 0) firstRollType = rollType;
+                const adPosition = parseInt(attr['X-TV-TWITCH-AD-POD-POSITION'] || String(i), 10);
+                // Per-ad-instance identifier (DATERANGE ID's stitched-ad-<UUID>) — distinct
+                // per ad. ADVERTISER-ID is the brand and would collide across same-advertiser ads.
+                const stitchedAdId = (attr['ID'] || '').replace(/^"|"$/g, '');
+                // Payload consistent with the "watched-to-completion" events we claim:
+                // audio-on, visible, full duration. Mismatched fields (mute=true / volume=0 /
+                // visible=false / duration=0) would be obvious cross-validation flags.
+                const adDuration = parseInt(attr['X-TV-TWITCH-AD-DURATION'] || '0', 10) || 0;
+                const payload = {
+                    stitched: true,
+                    ad_id: stitchedAdId,
+                    roll_type: rollType,
+                    creative_id: attr['X-TV-TWITCH-AD-CREATIVE-ID'] || '',
+                    order_id: attr['X-TV-TWITCH-AD-ORDER-ID'] || '',
+                    line_item_id: attr['X-TV-TWITCH-AD-LINE-ITEM-ID'] || '',
+                    player_mute: false,
+                    player_volume: 1.0,
+                    visible: true,
+                    duration: adDuration,
+                    ad_position: adPosition,
+                    total_ads: podLength
+                };
+                // Batch all 6 events into one GQL POST — Twitch supports array-batched
+                // operations natively. Reduces request count 6× and avoids the bot-like
+                // fingerprint of firing 6 separate requests at ad-detect.
+                const makePacket = (event, extra) => ({
+                    operationName: 'ClientSideAdEventHandling_RecordAdEvent',
+                    variables: { input: { eventName: event, eventPayload: JSON.stringify({ ...payload, ...extra }), radToken } },
+                    extensions: { persistedQuery: { version: 1, sha256Hash: '7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b' } }
+                });
+                const batch = [
+                    makePacket('video_ad_impression'),
+                    makePacket('video_ad_quartile_complete', { quartile: 1 }),
+                    makePacket('video_ad_quartile_complete', { quartile: 2 }),
+                    makePacket('video_ad_quartile_complete', { quartile: 3 }),
+                    makePacket('video_ad_quartile_complete', { quartile: 4 }),
+                    makePacket('video_ad_pod_complete'),
+                ];
+                // Surveil GQL response status — non-200 means Twitch rejected the spoof
+                // (400/403/429). Once-per-session guard avoids log spam.
+                gqlRequest(batch).then(response => {
+                    if (response && response.status !== 200 && !notifyAdComplete.loggedBadStatus) {
+                        notifyAdComplete.loggedBadStatus = true;
+                        console.log('[AD DEBUG] notifyAdComplete: GQL response status ' + response.status + ' — spoof may be rejected/rate-limited');
+                    }
+                }).catch(() => {});
+                spoofedCount++;
+            }
+            if (spoofedCount > 0) {
+                console.log('[AD DEBUG] Spoofed ad completion for ' + spoofedCount + '/' + podLength + ' ad(s) — roll: ' + firstRollType);
+            }
+        } catch (err) {
+            console.log('[AD DEBUG] Ad completion spoof failed: ' + err.message);
+        }
+    }
     function getMatchedAdSignifiers(textStr) {
         return AdSignifiers.filter((s) => textStr.includes(s));
     }
@@ -962,6 +1051,9 @@ twitch-videoad.js text/javascript
                 streamInfo.FreezeStartedAt = 0;
                 streamInfo.CsaiOnlyThisBreak = false;// Reset sticky CSAI flag for new break
                 console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', pod: ' + podLength + ' ad(s) (~' + (podLength * 30) + 's expected), signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
+                if (!DisableAdSpoofing) {
+                    notifyAdComplete(textStr);
+                }
                 postMessage({
                     key: 'UpdateAdBlockBanner',
                     isMidroll: streamInfo.IsMidroll,
@@ -2492,6 +2584,11 @@ twitch-videoad.js text/javascript
         if (lsBackupSwapFirst === 'false') {
             BackupSwapFirst = false;
             console.log('[AD DEBUG] BackupSwapFirst disabled via localStorage — using sticky CSAI path (strip on native stream)');
+        }
+        const lsDisableAdSpoofing = localStorage.getItem('twitchAdSolutions_disableAdSpoofing');
+        if (lsDisableAdSpoofing === 'true') {
+            DisableAdSpoofing = true;
+            console.log('[AD DEBUG] DisableAdSpoofing enabled via localStorage — skipping GQL ad-tracking beacons');
         }
         const lsRecoverFromSilentMute = localStorage.getItem('twitchAdSolutions_recoverFromSilentMute');
         if (lsRecoverFromSilentMute === 'false') {

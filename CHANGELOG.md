@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v67.2.0 (2026-05-16)
+
+### Detection Evasion
+- **Ad completion spoofing lifted from testing → release** — when an ad break is detected, vaft now fires the GQL ad-tracking beacons (`video_ad_impression`, `video_ad_quartile_complete` × 4, `video_ad_pod_complete`) that Twitch's player would have sent if the ad had played normally. Spoof completes the ad-tracking signal Twitch expects, mimicking a "normal viewer" session. RADS-token extracted from the stitched-ad DATERANGE line. Per-pod, fires once per ad break at detection. Failures swallowed (never blocks normal ad-block flow). Default on; set `twitchAdSolutions_disableAdSpoofing=true` to opt out (for A/B testing whether spoofing affects ad break duration or detection behavior). Has been running in testing scripts for months without issues (vaft) (#NN)
+
 ## v67.1.0 (2026-05-15)
 
 ### Behavior Changes
