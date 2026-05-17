@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v67.3.0 (2026-05-17)
+
+### Detection Evasion
+- **Ad-completion spoofing: full multi-ad pod coverage** — follow-up to v67.2.0. The spoof previously fired once at break-start, but Twitch only discloses each ad's `#EXT-X-DATERANGE` when that ad starts playing — so a 6-ad pod surfaced one ad per m3u8 poll and only ad #1 ever got spoofed (`1/6` observed in field logs on peach / hadi_ow). `notifyAdComplete` now runs on every ad-laden poll (not just the break-start transition) and dedups via a new per-streamInfo `SpoofedAdIds` set, so each ad in the pod is spoofed exactly once as its DATERANGE appears — full N/N coverage. `total_ads` now derived from the `X-TV-TWITCH-AD-POD-LENGTH` attribute (true pod size) instead of the per-poll visible-match count. `SpoofedAdIds` cleared at break end. `video_ad_pod_complete` now fires **once per pod** (attached to the ad that completes the true pod size) instead of per-ad — a real player sends one pod_complete; emitting it 6× for a 6-ad pod would itself be a fingerprint, and if the pod never fully surfaces it is correctly never sent. Log reports cumulative progress plus debug context: `Spoofed ad completion for N new ad(s) (M/POD pod) — roll: midroll, src: <primary|backup-player-type>, pod-complete: <yes|no>` — `src` surfaces the stream-swap ad-ID-mixing limitation (a pod spoofed across primary+backup shows src changing mid-pod); `pod-complete` confirms the single pod_complete fired explicitly instead of inferring it from the M/POD ratio. Hot-path optimised since `notifyAdComplete` now runs every ad-laden poll (~hundreds per long multi-ad break): early-return once the dedup set covers the pod (skips the per-match parse loop on every post-completion poll), and a cheap `^ID="..."` pre-extract gates the dedup check before the full `parseAttributes()` so already-spoofed ads aren't re-parsed each poll. Failure-mode + response-status surveillance unchanged (vaft) (#NN)
+
 ## v67.2.0 (2026-05-16)
 
 ### Detection Evasion
