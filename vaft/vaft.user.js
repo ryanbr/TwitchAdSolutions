@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      67.2.0
+// @version      67.3.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 79;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 80;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -156,6 +156,7 @@
             Urls: Object.create(null),// xxx.m3u8 -> { Resolution: "284x160", FrameRate: 30.0 }
             ResolutionList: [],
             RequestedAds: new Set(),
+            SpoofedAdIds: new Set(),// notifyAdComplete: stitched-ad IDs already spoofed this break (multi-poll dedup). Cleared at break end.
             // Modified m3u8 state
             ModifiedM3U8: null,
             IsUsingModifiedM3U8: false,
@@ -703,14 +704,14 @@
     // never fire. Spoofing them mimics the "ad played normally" signal, potentially
     // reducing detection escalation. RADS-token extracted from the stitched-ad DATERANGE
     // line. Failures swallowed — never block normal ad-block flow.
-    function notifyAdComplete(textStr) {
+    function notifyAdComplete(textStr, streamInfo) {
         try {
             // Each ad in a pod has its OWN #EXT-X-DATERANGE:ID="stitched-ad-..." line
             // with its own RADS-token, ad-id, creative-id, line-item-id, position, etc.
-            // Iterate per-ad and submit each ad's beacons with its own metadata. The
-            // prior single-match implementation submitted ad #1's metadata for all N
-            // positions in the pod — beacons for positions 2..N had wrong tokens and
-            // could be flagged by Twitch as invalid (worse than not sending at all).
+            // Twitch reveals each ad's DATERANGE only when that ad starts playing, so a
+            // 6-ad pod surfaces ONE ad per m3u8 poll across the break. This function is
+            // called on every ad-laden poll; streamInfo.SpoofedAdIds dedups across polls
+            // so each ad is spoofed exactly once as it appears (full N/N pod coverage).
             const matches = [...textStr.matchAll(/#EXT-X-DATERANGE:(ID="stitched-ad-[^\n]+)\n/g)];
             if (matches.length === 0) {
                 if (!notifyAdComplete.loggedNoMatch) {
@@ -720,10 +721,35 @@
                 }
                 return;
             }
-            const podLength = matches.length;
-            let spoofedCount = 0;
+            const spoofedSet = (streamInfo && streamInfo.SpoofedAdIds) || null;
+            // True pod size from the m3u8 attribute (present on each DATERANGE); fall
+            // back to visible-match count if absent. Keeps total_ads consistent across
+            // all ads in the pod even though they surface one poll at a time.
+            const podLenMatch = textStr.match(/X-TV-TWITCH-AD-POD-LENGTH="(\d+)"/);
+            const podLength = podLenMatch ? parseInt(podLenMatch[1], 10) : matches.length;
+            // Hot-path early-out: notifyAdComplete now runs every ad-laden poll, and a
+            // long multi-ad break has hundreds of polls AFTER the whole pod is already
+            // spoofed. Once the dedup set covers the pod, every remaining poll is pure
+            // waste — bail before the per-match parseAttributes loop. (size at entry is
+            // before this poll's additions, so the poll that completes the pod still
+            // runs and attaches pod_complete; only subsequent polls short-circuit.)
+            if (spoofedSet && spoofedSet.size >= podLength) {
+                return;
+            }
+            let newSpoofed = 0;
             let firstRollType = '';
-            for (let i = 0; i < podLength; i++) {
+            let podCompleteSent = false;
+            for (let i = 0; i < matches.length; i++) {
+                // Cheap ID pre-extract for the dedup check — the DATERANGE capture
+                // always starts with ID="stitched-ad-<UUID>". Checking the dedup set
+                // before the full parseAttributes() avoids re-parsing every already-
+                // spoofed ad's attribute string on each poll during the spoofing phase.
+                const idMatch = matches[i][1].match(/^ID="([^"]+)"/);
+                const stitchedAdId = idMatch ? idMatch[1] : '';
+                // Multi-poll dedup: skip ads already spoofed earlier this break.
+                if (spoofedSet && stitchedAdId && spoofedSet.has(stitchedAdId)) {
+                    continue;
+                }
                 const attr = parseAttributes(matches[i][1]);
                 const radToken = attr['X-TV-TWITCH-AD-RADS-TOKEN'];
                 if (!radToken) {
@@ -734,14 +760,10 @@
                     continue;
                 }
                 const rollType = (attr['X-TV-TWITCH-AD-ROLL-TYPE'] || '').toLowerCase();
-                if (i === 0) firstRollType = rollType;
+                if (!firstRollType) firstRollType = rollType;
                 // Prefer m3u8's explicit pod-position when present (e.g. X-TV-TWITCH-AD-POD-POSITION="2");
                 // fall back to iteration index for older formats.
                 const adPosition = parseInt(attr['X-TV-TWITCH-AD-POD-POSITION'] || String(i), 10);
-                // Per-ad-instance identifier (the "stitched-ad-<UUID>" value from the
-                // DATERANGE ID attribute) — distinct per ad in a pod. ADVERTISER-ID is the
-                // brand and would collide for multiple ads from the same advertiser.
-                const stitchedAdId = (attr['ID'] || '').replace(/^"|"$/g, '');
                 // Payload internally consistent with the events we claim happened. Sending
                 // quartile_complete{4} + pod_complete = "watched 100% of the ad to completion."
                 // Pairing that with mute=true / volume=0 / visible=false / duration=0 is the
@@ -766,20 +788,34 @@
                 // Batch all 6 events for this ad into one GQL POST. Twitch's endpoint
                 // supports JSON-array batched operations natively. Reduces request count
                 // 6× and avoids the bot-like fingerprint of firing 6 separate requests
-                // in rapid succession at ad-detect time.
+                // in rapid succession.
                 const makePacket = (event, extra) => ({
                     operationName: 'ClientSideAdEventHandling_RecordAdEvent',
                     variables: { input: { eventName: event, eventPayload: JSON.stringify({ ...payload, ...extra }), radToken } },
                     extensions: { persistedQuery: { version: 1, sha256Hash: '7e6c69e6eb59f8ccb97ab73686f3d8b7d85a72a0298745ccd8bfc68e4054ca5b' } }
                 });
+                // Mark this ad spoofed BEFORE building the batch so the pod-complete
+                // size check below reflects it.
+                if (spoofedSet && stitchedAdId) spoofedSet.add(stitchedAdId);
                 const batch = [
                     makePacket('video_ad_impression'),
                     makePacket('video_ad_quartile_complete', { quartile: 1 }),
                     makePacket('video_ad_quartile_complete', { quartile: 2 }),
                     makePacket('video_ad_quartile_complete', { quartile: 3 }),
                     makePacket('video_ad_quartile_complete', { quartile: 4 }),
-                    makePacket('video_ad_pod_complete'),
                 ];
+                // pod_complete fires ONCE per pod — not per ad. A real player sends a
+                // single pod_complete after the whole pod finishes; emitting it on every
+                // ad (6× for a 6-ad pod) is itself a fingerprint. Attach it to the ad
+                // that brings the dedup set up to the true pod size (the last ad). If
+                // the pod never fully surfaces (some DATERANGEs missed / break ended
+                // early) pod_complete is correctly never sent — a real player wouldn't
+                // claim pod completion it didn't reach either. Defensive fallback (no
+                // dedup set): keep per-ad pod_complete so the signal isn't lost.
+                if (!spoofedSet || spoofedSet.size === podLength) {
+                    batch.push(makePacket('video_ad_pod_complete'));
+                    podCompleteSent = true;
+                }
                 // Surveil GQL response status — distinguishes "spoof fired, accepted" from
                 // "spoof fired, Twitch rejected" (400/403/429/5xx). The .catch only fires for
                 // network errors / timeouts; non-200 status resolves normally. Without this,
@@ -792,10 +828,18 @@
                         console.log('[AD DEBUG] notifyAdComplete: GQL response status ' + response.status + ' — spoof may be rejected/rate-limited');
                     }
                 }).catch(() => {});
-                spoofedCount++;
+                newSpoofed++;
             }
-            if (spoofedCount > 0) {
-                console.log('[AD DEBUG] Spoofed ad completion for ' + spoofedCount + '/' + podLength + ' ad(s) — roll: ' + firstRollType);
+            if (newSpoofed > 0) {
+                const total = spoofedSet ? spoofedSet.size : newSpoofed;
+                // src= which stream the spoofed DATERANGEs came from (primary vs a
+                // committed backup player-type) — surfaces the stream-swap ad-ID
+                // mixing limitation: a pod that spoofs across primary+backup shows
+                // src changing mid-pod. pod-complete= whether this poll attached the
+                // single video_ad_pod_complete (lets you confirm pod completion
+                // explicitly instead of inferring it from the total/POD ratio).
+                const src = (streamInfo && streamInfo.ActiveBackupPlayerType) || 'primary';
+                console.log('[AD DEBUG] Spoofed ad completion for ' + newSpoofed + ' new ad(s) (' + total + '/' + podLength + ' pod) — roll: ' + firstRollType + ', src: ' + src + ', pod-complete: ' + (podCompleteSent ? 'yes' : 'no'));
             }
         } catch (err) {
             console.log('[AD DEBUG] Ad completion spoof failed: ' + err.message);
@@ -1114,15 +1158,19 @@
                 streamInfo.FreezeStartedAt = 0;
                 streamInfo.CsaiOnlyThisBreak = false;// Reset sticky CSAI flag for new break
                 console.log('[AD DEBUG] Ad detected — type: ' + (streamInfo.IsMidroll ? 'midroll' : 'preroll') + ', channel: ' + streamInfo.ChannelName + ', pod: ' + podLength + ' ad(s) (~' + (podLength * 30) + 's expected), signifiers: ' + getMatchedAdSignifiers(textStr).join(', '));
-                if (!DisableAdSpoofing) {
-                    notifyAdComplete(textStr);
-                }
                 postMessage({
                     key: 'UpdateAdBlockBanner',
                     isMidroll: streamInfo.IsMidroll,
                     hasAds: streamInfo.IsShowingAd,
                     isStrippingAdSegments: false
                 });
+            }
+            // Spoof ad-completion every ad-laden poll (not just break-start). Twitch
+            // discloses each ad's DATERANGE only as that ad starts, so multi-ad pods
+            // surface one ad per poll — notifyAdComplete dedups via SpoofedAdIds so
+            // each ad is spoofed once across the break (full N/N coverage).
+            if (!DisableAdSpoofing) {
+                notifyAdComplete(textStr, streamInfo);
             }
             if (!streamInfo.IsMidroll) {
                 const lines = textStr.split(/\r?\n/);
@@ -1640,6 +1688,7 @@
                 streamInfo.NumStrippedAdSegments = 0;
                 streamInfo.ActiveBackupPlayerType = null;
                 streamInfo.RequestedAds?.clear?.();
+                streamInfo.SpoofedAdIds?.clear?.();// New break = fresh ad-spoof dedup set
                 streamInfo.FailedBackupPlayerTypes?.clear?.();
                 if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
                 streamInfo.LoggedContamReorderThisBreak = false;
