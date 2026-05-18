@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 82;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 85;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -449,17 +449,34 @@ twitch-videoad.js text/javascript
                         });
                     }
                 });
-                // Worker crash recovery — IVS WASM worker can fire RuntimeError
-                // (e.g. "index out of bounds") and die. A single crash fires multiple
-                // error events; dedupe via a local flag. On first error, trigger a
-                // hard reload via the main reload path — Twitch re-spawns the worker
-                // as part of the new player instance, and existing reload cooldown
-                // prevents runaway restart loops.
+                // Worker crash recovery — the Amazon IVS WASM worker can fire a
+                // RuntimeError (e.g. "indirect call signature mismatch", "index out of
+                // bounds") and die. Not vaft-caused (it is inside Amazon's compiled
+                // WASM), but recoverable: a hard reload makes Twitch re-spawn the worker
+                // in a fresh player instance. One crash fires multiple error events —
+                // the per-worker `crashed` flag dedupes those.
+                // Circuit breaker: that flag does NOT survive the reload (new worker =
+                // fresh flag) and this path calls doTwitchPlayerTask directly, bypassing
+                // the worker-side reload cooldown — so a persistently-crashing WASM (bad
+                // codec/stream state) would otherwise become a tight, uncooled
+                // crash->reload->crash loop, worse than the crash itself.
+                // playerBufferState survives reloads; track crash times in a 60s rolling
+                // window and stop auto-reloading at 3+ (reloading clearly is not fixing
+                // it — leave the player for the user to act on). Self-healing: the window
+                // empties after a quiet period, so an isolated later crash still recovers.
                 let crashed = false;
                 this.addEventListener('error', (e) => {
                     if (crashed) return;
                     crashed = true;
-                    console.log('[AD DEBUG] IVS WASM worker crashed: ' + ((e && e.message) || 'unknown error') + ' — triggering hard reload to recover');
+                    const now = Date.now();
+                    const crashTimes = (playerBufferState.ivsCrashTimes = (playerBufferState.ivsCrashTimes || []).filter(t => now - t < 60000));
+                    crashTimes.push(now);
+                    const msg = (e && e.message) || 'unknown error';
+                    if (crashTimes.length >= 3) {
+                        console.log('[AD DEBUG] IVS WASM worker crashed: ' + msg + ' — ' + crashTimes.length + ' crashes in 60s; auto-recovery paused (Amazon IVS-side instability — reloading is not helping)');
+                        return;
+                    }
+                    console.log('[AD DEBUG] IVS WASM worker crashed: ' + msg + ' — triggering hard reload to recover (' + crashTimes.length + '/3 in 60s)');
                     try { doTwitchPlayerTask(false, true, 'early'); } catch (err) {
                         console.log('[AD DEBUG] Worker crash recovery failed: ' + err.message);
                     }

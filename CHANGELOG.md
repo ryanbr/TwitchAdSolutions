@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v68.4.0 (2026-05-18)
+
+### Robustness
+- **Circuit-breaker for IVS WASM crash recovery** — the Amazon IVS WASM worker can throw a `RuntimeError` (`indirect call signature mismatch`, `index out of bounds`, etc.) and die. Not vaft-caused (it is inside Amazon's compiled WASM) and already recovered via detect→hard-reload — but that path had a latent loop: the per-worker `crashed` dedupe flag does **not** survive the reload (a re-spawned worker gets a fresh flag), and the handler calls `doTwitchPlayerTask` directly, **bypassing** the worker-side reload cooldown (which lives in the processM3U8 reload-decision path it never traverses — the old "existing reload cooldown prevents runaway restart loops" comment was inaccurate). A persistently-crashing WASM (bad codec/stream state) would therefore tight-loop `crash → uncooled hard reload → fresh worker → crash → …`, strictly worse for the user than the crash itself. Now crash times are tracked in a `playerBufferState`-held 60s rolling window (survives reloads); at **3+ crashes within 60s** auto-reload is suppressed and `[AD DEBUG] IVS WASM worker crashed: … — N crashes in 60s; auto-recovery paused (Amazon IVS-side instability — reloading is not helping)` is logged instead of looping. Self-healing: the window empties after a quiet period, so an isolated later crash still gets a recovery attempt. Single-crash behavior is unchanged (still detect→reload→recover, now annotated `(1/3 in 60s)`). vaft-only (#NN)
+
 ## v68.1.0 (2026-05-18)
 
 ### Performance
