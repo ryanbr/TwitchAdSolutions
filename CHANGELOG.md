@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v68.3.0 (2026-05-18)
+
+### Performance
+- **Backup-retry cooldown cut 15s → 5s** — the `FailedBackupPlayerTypes` lockout (`if (failedAt && (Date.now() - failedAt) < 15000)`) kept the backup search off a contaminated player type for 15s. In the universal CSAI-flip reality a type can become clean again within seconds, so the 15s lockout left the search avoiding a now-recovered type far longer than warranted, prolonging ad-break stalling. Reduced to 5s, porting the GosuDRM/TTV-AB v8.0.0 "reduced ad-induced stalling" tuning (`_getBackupPlayerRetryCooldownMs` 15000→5000) to vaft's equivalent lockout. **Deliberate latency/load tradeoff:** a 5s cooldown means an ad-laden type is retried ~3× more often → more token/m3u8 fetches → more pressure on the `ConsecutiveTokenFetchFailures` detection/rate-limit tripwire. Shipped *with* the cold/warm token-fetch instrumentation (v68.2.0 / #228) specifically so the added cold-fetch load is visible in field logs and the tradeoff can be tuned or reverted against data. vaft-only mechanism (video-swap-new has no equivalent) (#NN)
+
 ## v68.1.0 (2026-05-18)
 
 ### Performance
