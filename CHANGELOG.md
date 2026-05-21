@@ -1,14 +1,12 @@
 ## Unreleased
 
-## v68.4.0 (2026-05-18)
-
-### Diagnostics
-- **Backup-search cold/warm cache cost instrumented** — the `Blocking ads (<type>) — backup found in Nms` log now appends `(cold cache: N token fetch[es])` or `(warm cache)`. A per-search local counter increments on the cold path (`isFreshM3u8` — the GQL `getAccessToken` round-trip is only taken when `BackupEncodingsM3U8Cache[type]` misses; it is skipped when the encodings are cached). This decomposes the ~4s stacked sequential backup-search walk seen in field logs into cold-cache-first-break vs warm steady-state, so the latency can be designed against real data rather than guessed. Pure observability — no behavioral or load change; the entangled backup-search loop is untouched. Complements the v68.3.0 cooldown cut by making its cold-fetch-load cost visible in field logs (vaft) (#NN)
-
-## v68.3.0 (2026-05-18)
+## v68.2.0 (2026-05-21)
 
 ### Performance
-- **Backup-retry cooldown cut 15s → 5s** — the `FailedBackupPlayerTypes` lockout (`if (failedAt && (Date.now() - failedAt) < 15000)`) kept the backup search off a contaminated player type for 15s. In the universal CSAI-flip reality a type can become clean again within seconds, so the 15s lockout left the search avoiding a now-recovered type far longer than warranted, prolonging ad-break stalling. Reduced to 5s, porting the GosuDRM/TTV-AB v8.0.0 "reduced ad-induced stalling" tuning (`_getBackupPlayerRetryCooldownMs` 15000→5000) to vaft's equivalent lockout. **Deliberate latency/load tradeoff:** a 5s cooldown means an ad-laden type is retried ~3× more often → more token/m3u8 fetches → more pressure on the `ConsecutiveTokenFetchFailures` detection/rate-limit tripwire. Shipped *with* the cold/warm token-fetch instrumentation (v68.2.0 / #228) specifically so the added cold-fetch load is visible in field logs and the tradeoff can be tuned or reverted against data. vaft-only mechanism (video-swap-new has no equivalent) (#NN)
+- **Backup-retry cooldown cut 15s → 5s** — the `FailedBackupPlayerTypes` lockout (`if (failedAt && (Date.now() - failedAt) < 15000)`) kept the backup search off a contaminated player type for 15s. In the universal CSAI-flip reality a type can become clean again within seconds, so the 15s lockout left the search avoiding a now-recovered type far longer than warranted, prolonging ad-break stalling. Reduced to 5s, porting the GosuDRM/TTV-AB v8.0.0 "reduced ad-induced stalling" tuning (`_getBackupPlayerRetryCooldownMs` 15000→5000) to vaft's equivalent lockout. **Deliberate latency/load tradeoff:** a 5s cooldown means an ad-laden type is retried ~3× more often → more token/m3u8 fetches → more pressure on the `ConsecutiveTokenFetchFailures` detection/rate-limit tripwire. Shipped *with* the cold/warm token-fetch instrumentation below specifically so the added cold-fetch load is visible in field logs and the tradeoff can be tuned or reverted against data. vaft-only mechanism (video-swap-new has no equivalent) (#NN)
+
+### Diagnostics
+- **Backup-search cold/warm cache cost instrumented** — the `Blocking ads (<type>) — backup found in Nms` log now appends `(cold cache: N token fetch[es])` or `(warm cache)`. A per-search local counter increments on the cold path (`isFreshM3u8` — the GQL `getAccessToken` round-trip is only taken when `BackupEncodingsM3U8Cache[type]` misses; it is skipped when the encodings are cached). This decomposes the ~4s stacked sequential backup-search walk seen in field logs into cold-cache-first-break vs warm steady-state, so the latency can be designed against real data rather than guessed. Pure observability — no behavioral or load change; the entangled backup-search loop is untouched. Companion to the cooldown cut above — makes its cold-fetch-load cost visible in field logs (vaft) (#NN)
 
 ## v68.1.0 (2026-05-18)
 
