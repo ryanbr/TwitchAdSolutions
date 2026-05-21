@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v68.4.0 (2026-05-18)
+
+### Diagnostics
+- **Backup-search cold/warm cache cost instrumented** — the `Blocking ads (<type>) — backup found in Nms` log now appends `(cold cache: N token fetch[es])` or `(warm cache)`. A per-search local counter increments on the cold path (`isFreshM3u8` — the GQL `getAccessToken` round-trip is only taken when `BackupEncodingsM3U8Cache[type]` misses; it is skipped when the encodings are cached). This decomposes the ~4s stacked sequential backup-search walk seen in field logs into cold-cache-first-break vs warm steady-state, so the latency can be designed against real data rather than guessed. Pure observability — no behavioral or load change; the entangled backup-search loop is untouched. Complements the v68.3.0 cooldown cut by making its cold-fetch-load cost visible in field logs (vaft) (#NN)
+
 ## v68.3.0 (2026-05-18)
 
 ### Performance
