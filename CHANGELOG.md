@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Diagnostics
+- **Spoofing-on debug instrumentation** — makes the opt-in spoofing path easier to diagnose / A/B against the now-default-off state. Three small additions: (1) at startup, when `DisableAdSpoofing === false`, a clear log line surfaces the enabled state and names the source (`localStorage opt-in` vs `modified default`) so it's unmistakable in the log header; (2) a worker session counter (`notifyAdComplete.sessionAdsSpoofed`, function-property pattern matching existing `loggedNoMatch`/`loggedBadStatus`) is appended to the existing `Spoofed ad completion` line as `[session: N ads spoofed]`; (3) a main-thread session counter (`sessionCsaiRequests`) is appended to the `CSAI ad request detected` line as `[session: K CSAI requests so far]` (counts every `edge.ads.twitch.tv` request, not gated by the once-per-type dedup — so the visible count is the running total at first-of-each-type emission). Pure observability — no behavioral change to spoofing, ad-blocking, or the GQL beacon flow. Lets two sessions on the same channel (one spoof-on opt-in, one spoof-off default) be directly compared on total ads spoofed + total CSAI requests delivered to the session, which is the data any future spoofing-default decision should be based on (vaft) (#NN)
+
 ## v68.3.0 (2026-05-21)
 
 ### Detection Evasion
