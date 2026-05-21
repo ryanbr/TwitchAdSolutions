@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Documentation
+- **Crash-recovery comment corrected (release pair)** — the inline comment at the IVS WASM worker `error` handler in `vaft.user.js` + `vaft-ublock-origin.js` previously claimed *"existing reload cooldown prevents runaway restart loops"* — verifiably false; the crash-recovery `doTwitchPlayerTask(..., 'early')` call bypasses the worker-side cooldown logic that lives in `processM3U8`'s reload-decision path. Comment rewritten to accurately state: per-worker `crashed` flag dedupes the multi-event burst from one crash, no cross-worker storm guard is implemented (intentionally — observed crashes have all been single + recoverable; revisit only if field logs ever show clustered crashes ≥2 within ~60s in one session). Lists all three observed WASM-error message variants (`index out of bounds`, `indirect call signature mismatch`, `indirect call to null`). No behavioral change. Testing pair untouched — it already has the full circuit-breaker implementation with its own accurate comment (intentional release-vs-testing divergence, per CLAUDE.md "Testing files include experimental features") (vaft) (#NN)
+
 ## v68.3.0 (2026-05-21)
 
 ### Detection Evasion
