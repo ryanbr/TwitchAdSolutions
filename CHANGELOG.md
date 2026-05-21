@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Detection Evasion
+- **Ad spoofing default flipped on → off** — was previously on by default with a localStorage opt-out (`twitchAdSolutions_disableAdSpoofing='true'` to disable); now off by default with a localStorage opt-IN (`twitchAdSolutions_disableAdSpoofing='false'` to re-enable). Rationale: convergent signals that the spoof's always-100%-watched + audible + visible beacon pattern (fires before a human would plausibly have watched the ad) may itself fingerprint as anomalous in Twitch's anti-adblock heuristics — silent fingerprinting that vaft's `GQL response status` surveillance line (which only catches loud rejections) cannot detect. Field signal: an in-stream ad reaching the committed autoplay 360p backup on `warn` despite full vaft pod coverage and 100% Twitch acceptance of the spoof beacons (i.e., consistent with detection escalation rather than spoof rejection). Convergent with the TTV-AB maintainer's hypothesis. Mechanism retained intact: users who want to A/B test or explicitly opt in can set `twitchAdSolutions_disableAdSpoofing='false'`. vaft only (#NN)
+
 ## v68.2.0 (2026-05-21)
 
 ### Performance
