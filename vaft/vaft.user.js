@@ -991,7 +991,12 @@
             if (!streamInfo.FreezeStartedAt) streamInfo.FreezeStartedAt = Date.now();
             // Primary: fresh full-playlist snapshot (< 1.5s old, must not itself contain ad markers)
             const snapshotAge = streamInfo.LastCleanNativePlaylistAt ? (Date.now() - streamInfo.LastCleanNativePlaylistAt) : Infinity;
-            if (streamInfo.LastCleanNativeM3U8 && snapshotAge <= 1500 && !hasAdTags(streamInfo.LastCleanNativeM3U8)) {
+            // Post-ad re-entry guard (mirrors TTV-AB v9.1.3): on a consecutive break that re-enters
+            // within the 8s post-ad reload window, the snapshot can straddle the end-of-break reload
+            // boundary and replay stale content from the previous cycle. Skip it and fall through to
+            // the per-segment recovery cache, which is rebuilt from the current break's polls.
+            const recentReloadReentry = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < 8000;
+            if (streamInfo.LastCleanNativeM3U8 && snapshotAge <= 1500 && !recentReloadReentry && !hasAdTags(streamInfo.LastCleanNativeM3U8)) {
                 console.log('[AD DEBUG] All segments stripped — reusing last clean native playlist (' + snapshotAge + 'ms old)');
                 streamInfo.IsStrippingAdSegments = hasStrippedAdSegments;
                 return streamInfo.LastCleanNativeM3U8;
