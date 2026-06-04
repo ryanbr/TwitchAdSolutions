@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- **Buffer monitor no longer backs off during an active ad break on a hidden tab** — the visibility-aware backoff polls the buffer monitor 3× slower when the tab is hidden (to save CPU on backgrounded tabs). That backoff now skips while `playerBufferState.inAdBreak` is true, so stall detection stays at full cadence during the recovery-critical window (backup search → reload) even on a backgrounded tab. Motivated by issue #129 (Firefox): a break starting on a hidden tab could leave the stream "stuck loading" until the user refocused the tab, because recovery polling had dropped to 3-9s. **Workaround, not a full fix** — the deeper cause is browser-level hidden-tab timer clamping + media/network deprioritization, which a page-context script can't override; this just removes vaft's own compounding backoff during the window that matters. Negligible cost (faster polling only while hidden *and* mid-break). N=1 field signal — shipping as a low-risk hardening that's also defensible on its own merits (don't throttle stall detection during an ad break). vaft only — video-swap-new has no visibility-aware backoff to gate (#NN)
+
 ## v68.3.0 (2026-05-21)
 
 ### Detection Evasion

@@ -2173,8 +2173,12 @@
         // lifecycle and stay visible afterwards. Running here on every monitor tick
         // (1-3s cadence) keeps them hidden without a dedicated interval.
         try { hideTwitchAdOverlays(); } catch {}
-        // Visibility-aware backoff: poll 3x slower when tab is hidden (but NOT during PiP — user is still watching)
-        const shouldThrottle = typeof document !== 'undefined' && document.hidden && !document.pictureInPictureElement;
+        // Visibility-aware backoff: poll 3x slower when tab is hidden (but NOT during PiP — user is still watching).
+        // Exception: don't back off during an active ad break — hidden-tab recovery (backup search → reload) is
+        // already slowed by browser timer clamping; the 3x backoff compounds the "stuck loading until refocus"
+        // stall some users hit when a break starts on a backgrounded tab (issue #129). Workaround, not a full fix:
+        // background media deprioritization is browser-level. Negligible cost — only polls faster while hidden + in-break.
+        const shouldThrottle = typeof document !== 'undefined' && document.hidden && !document.pictureInPictureElement && !playerBufferState.inAdBreak;
         const nextDelay = shouldThrottle ? PlayerBufferingDelay * 3 : PlayerBufferingDelay;
         setTimeout(monitorPlayerBuffering, nextDelay);
     }
