@@ -216,6 +216,7 @@
         return fn;
     }
     const loggedCsaiTypes = new Set();
+    let sessionCsaiRequests = 0;// instrumentation: cumulative count of edge.ads.twitch.tv CSAI requests this page-load; surfaced in the CSAI-detected log for A/B comparison vs spoof-off sessions
     let isActivelyStrippingAds = false;
     let localStorageHookFailed = false;
     const twitchWorkers = [];
@@ -839,7 +840,8 @@
                 // single video_ad_pod_complete (lets you confirm pod completion
                 // explicitly instead of inferring it from the total/POD ratio).
                 const src = (streamInfo && streamInfo.ActiveBackupPlayerType) || 'primary';
-                console.log('[AD DEBUG] Spoofed ad completion for ' + newSpoofed + ' new ad(s) (' + total + '/' + podLength + ' pod) — roll: ' + firstRollType + ', src: ' + src + ', pod-complete: ' + (podCompleteSent ? 'yes' : 'no'));
+                notifyAdComplete.sessionAdsSpoofed = (notifyAdComplete.sessionAdsSpoofed || 0) + newSpoofed;
+                console.log('[AD DEBUG] Spoofed ad completion for ' + newSpoofed + ' new ad(s) (' + total + '/' + podLength + ' pod) — roll: ' + firstRollType + ', src: ' + src + ', pod-complete: ' + (podCompleteSent ? 'yes' : 'no') + ' [session: ' + notifyAdComplete.sessionAdsSpoofed + ' ads spoofed]');
             }
         } catch (err) {
             console.log('[AD DEBUG] Ad completion spoof failed: ' + err.message);
@@ -2664,10 +2666,11 @@
                     }
                 }
                 if (url.includes('edge.ads.twitch.tv')) {
+                    sessionCsaiRequests++;
                     const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
                     if (!loggedCsaiTypes.has(csaiType)) {
                         loggedCsaiTypes.add(csaiType);
-                        console.log('[AD DEBUG] CSAI ad request detected — type: ' + csaiType + ' (client-side ad insertion, not blockable via m3u8)');
+                        console.log('[AD DEBUG] CSAI ad request detected — type: ' + csaiType + ' (client-side ad insertion, not blockable via m3u8) [session: ' + sessionCsaiRequests + ' CSAI requests so far]');
                     }
                 }
             }
@@ -2786,7 +2789,10 @@
         const lsDisableAdSpoofing = localStorage.getItem('twitchAdSolutions_disableAdSpoofing');
         if (lsDisableAdSpoofing === 'false') {
             DisableAdSpoofing = false;
-            console.log('[AD DEBUG] AdSpoofing enabled via localStorage opt-in — firing GQL ad-tracking beacons on ad detect');
+        }
+        if (!DisableAdSpoofing) {
+            const spoofSrc = (lsDisableAdSpoofing === 'false') ? 'localStorage opt-in' : 'modified default';
+            console.log('[AD DEBUG] AdSpoofing ENABLED (' + spoofSrc + ') — firing GQL ad-tracking beacons on every ad-laden poll. Default is OFF as of v68.3.0; opt-in mode for A/B testing. Watch session counters appended to "Spoofed ad completion" / "CSAI ad request detected" lines to compare with a spoof-off session on the same channel.');
         }
         const lsRecoverFromSilentMute = localStorage.getItem('twitchAdSolutions_recoverFromSilentMute');
         if (lsRecoverFromSilentMute === 'false') {
