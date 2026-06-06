@@ -2311,6 +2311,23 @@
             state: finalPlayerState
         };
     }
+    // Apple touch-device detection. iPadOS 13+ reports navigator.platform 'MacIntel' with a desktop
+    // Safari UA — distinguished from a real Mac only by touch support (real Macs report maxTouchPoints 0).
+    // iPhone/iPod/older iPadOS report platform directly.
+    const isAppleTouchDevice = (function() {
+        try {
+            const p = navigator.platform || '';
+            if (/^(iPhone|iPad|iPod)/.test(p)) return true;
+            return p === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1;
+        } catch { return false; }
+    })();
+    // On Apple touch devices a hard reload re-instantiates the media element (setSrc isNewMediaPlayerInstance),
+    // which iOS/iPadOS treats as not user-gesture-"blessed" → play() is rejected → black frame + native play
+    // icon the user must tap (issue: iPad ad black-screen). Downgrade hard reloads to soft so the existing
+    // blessed element is reused and resumes without a tap. Opt-out: twitchAdSolutions_iosSoftReload=false.
+    const iosSoftReload = isAppleTouchDevice && (function() {
+        try { return localStorage.getItem('twitchAdSolutions_iosSoftReload') !== 'false'; } catch { return true; }
+    })();
     // Pause/play or fully reload the Twitch player, preserving quality/volume settings
     function doTwitchPlayerTask(isPausePlay, isReload, reloadKind) {
         const playerAndState = getPlayerAndState();
@@ -2426,7 +2443,11 @@
             // playerForMonitoringBuffering re-acquired fresh every tick — no manual invalidation needed
             // Hard reload for 'early' (mid-break escape — fresh session gets new ad-decision bucket).
             // Soft reload for 'post-ad' (smooth transition, no black screen teardown).
-            const hardReload = reloadKind === 'early';
+            // Apple touch devices: force soft — a new media instance needs a user tap to resume (black-screen + play icon).
+            const hardReload = reloadKind === 'early' && !iosSoftReload;
+            if (reloadKind === 'early' && iosSoftReload) {
+                console.log('[AD DEBUG] iOS/iPadOS: downgrading hard reload to soft — keeps media element user-gesture-blessed (avoids black-screen + play-icon stall). Opt-out: twitchAdSolutions_iosSoftReload=false');
+            }
             console.log('[AD DEBUG] Reloading Twitch player' + (hardReload ? ' (hard)' : ' (soft)'));
             // Pre-mute through hard reload to hide the MediaSource-teardown audio click.
             // New MSE initialization crosses a discontinuity boundary that produces an
