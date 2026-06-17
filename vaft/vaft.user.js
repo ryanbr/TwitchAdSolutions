@@ -2114,6 +2114,38 @@
                 playerForMonitoringBuffering = null;
             }
         }
+        // In-ad frozen-buffer-gap seek (mirrors GosuDRM/TTV-AB _trySeekPastFrozenBufferGap, #33 / v9.7.5):
+        // the main buffer-stall recovery is gated !inAdBreak and the strip-recovery only fires while
+        // stripping, so on a CSAI break a frozen-at-gap autoplay backup has no recovery (loading circle).
+        // Confirm the playhead is genuinely frozen — no advance for 3 monitor ticks AND readyState < 3
+        // (starved) — then seek past the buffered hole. Live-only + confirmed-frozen, so it can't skip
+        // VOD content or fire while the player is still progressing.
+        if (playerBufferState.inAdBreak && !isActivelyStrippingAds && playerForMonitoringBuffering
+            && playerForMonitoringBuffering.state?.props?.content?.type === 'live') {
+            try {
+                const v = playerForMonitoringBuffering.player?.getHTMLVideoElement?.();
+                const ct = v ? v.currentTime : 0;
+                const last = playerBufferState.gapJumpLastPosition;
+                if (!v || last === undefined || last < 0 || ct > last + 0.2 || ct < last) {
+                    playerBufferState.gapJumpStuckTicks = 0;
+                } else {
+                    playerBufferState.gapJumpStuckTicks = (playerBufferState.gapJumpStuckTicks || 0) + 1;
+                }
+                playerBufferState.gapJumpLastPosition = ct;
+                if (v && !v.paused && !v.ended && (playerBufferState.gapJumpStuckTicks || 0) >= 3 && (v.readyState ?? 4) < 3 && v.buffered && v.buffered.length > 1) {
+                    for (let i = 0; i < v.buffered.length; i++) {
+                        const gapStart = v.buffered.start(i);
+                        if (gapStart > ct + 0.25) {
+                            console.log('[AD DEBUG] In-ad buffer-gap seek — playhead ' + ct.toFixed(1) + 's frozen ' + playerBufferState.gapJumpStuckTicks + ' ticks (readyState ' + v.readyState + '); seeking ' + (gapStart - ct).toFixed(1) + 's past gap to ' + gapStart.toFixed(1) + 's (mirrors TTV-AB #33)');
+                            v.currentTime = gapStart + 0.05;
+                            playerBufferState.gapJumpStuckTicks = 0;
+                            playerBufferState.gapJumpLastPosition = -1;
+                            break;
+                        }
+                    }
+                }
+            } catch {}
+        }
         // Loading-circle health check: during an ad strip+recovery loop the normal buffer monitor
         // is gated off (isActivelyStrippingAds), so a visibly stalled player would otherwise wait
         // for the worker's poll-based early reload (~10s). This catches the visible stall ~3s after

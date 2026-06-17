@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- **Loading circle during ad breaks — in-ad frozen-buffer-gap seek** — the buffer monitor's stall recovery is gated `!inAdBreak`, and the strip-recovery path only fires while actively stripping segments. On a CSAI break (`stripped 0`) neither applies, so when the autoplay 360p backup developed a buffered hole ahead of the playhead (field logs showed 18-24s gaps — a timeline discontinuity from the native↔backup swap), the player froze at the gap with **no recovery** until the gap filled or the break ended — a multi-second loading circle mid-break. Added a narrow in-ad recovery mirroring GosuDRM/TTV-AB's `_trySeekPastFrozenBufferGap` (#33 / v9.3.6 / v9.7.5): during a **live** CSAI break, once the playhead is confirmed **frozen** (no advance for 3 monitor ticks **and** `readyState < 3`, i.e. genuinely starved), seek past the buffered hole to the next range. **Seek-only and confirmed-frozen** — it can't fire a reload, can't skip VOD content (live-gated), and won't fire while the player is still progressing; the strip-recovery path is untouched. Logs each seek (#NN)
+
 ## v68.4.0 (2026-06-06)
 
 ### Fixed
