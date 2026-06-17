@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- **Buffer monitor always reschedules its next tick (crash-safe loop)** — `monitorPlayerBuffering` self-reschedules via `setTimeout(monitorPlayerBuffering, …)` as its last statement, but the ~250-line body (which walks Twitch's React/player internals every tick) had no top-level guard. A single unexpected throw — e.g. a Twitch-side player-shape change hitting an unguarded access — would skip the reschedule and **silently kill every stall / frozen-playhead / mute recovery for the rest of the session**, with no log and no way to recover short of a page reload. The body is now wrapped in `try { … } finally { setTimeout(…) }` so the loop always survives a tick exception. No happy-path behavior change (the body has no early returns; the reschedule was already the sole exit). Mirrors GosuDRM/TTV-AB v9.8.4 (#NN)
+
 ## v68.4.0 (2026-06-06)
 
 ### Fixed
