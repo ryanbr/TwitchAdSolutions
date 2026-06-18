@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Fixed
+- **Worker fetch relay no longer throws on null-body HTTP statuses** — the relay reconstructs the worker's fetch responses on the worker side via `new Response(body, { status })`. The `Response` constructor throws a `RangeError` when a non-null body is paired with a null-body status (101/204/205/304), and the main-thread relay passes the body as `await response.text()` — which is an empty string `''` (not `null`) for those statuses. So a **304 Not Modified** (or 204) returned through the relay — e.g. a conditional playlist/token request — would throw, the relayed fetch would never resolve, and the worker would hang on it until the relay timeout. The relay now drops the body for null-body statuses. Mirrors GosuDRM/TTV-AB v9.7.1 / v9.9.0 (shared relay lineage; upstream hit it in the field). vaft (#NN)
+
 ## v68.4.0 (2026-06-06)
 
 ### Fixed
