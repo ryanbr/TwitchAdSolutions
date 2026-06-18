@@ -1933,6 +1933,12 @@
     };
     // Poll the player state to detect and fix buffering caused by ad stream switching
     function monitorPlayerBuffering() {
+        // Always reschedule the next tick, even if the body throws — a single unexpected
+        // exception (e.g. a Twitch-side player-shape change) would otherwise silently kill
+        // every stall / frozen-playhead / mute recovery for the rest of the session.
+        // Mirrors GosuDRM/TTV-AB v9.8.4.
+        let rescheduleDelay = PlayerBufferingDelay;
+        try {
         // Fresh player lookup every tick (avoids stale ref when Twitch restarts its own player)
         playerForMonitoringBuffering = null;
         {
@@ -2184,8 +2190,10 @@
         // stall some users hit when a break starts on a backgrounded tab (issue #129). Workaround, not a full fix:
         // background media deprioritization is browser-level. Negligible cost — only polls faster while hidden + in-break.
         const shouldThrottle = typeof document !== 'undefined' && document.hidden && !document.pictureInPictureElement && !playerBufferState.inAdBreak;
-        const nextDelay = shouldThrottle ? PlayerBufferingDelay * 3 : PlayerBufferingDelay;
-        setTimeout(monitorPlayerBuffering, nextDelay);
+        rescheduleDelay = shouldThrottle ? PlayerBufferingDelay * 3 : PlayerBufferingDelay;
+        } finally {
+            setTimeout(monitorPlayerBuffering, rescheduleDelay);
+        }
     }
     // Hide Twitch's ad break / Turbo promo / stream display ad overlays when we're already blocking ads
     function hideTwitchAdOverlays() {
