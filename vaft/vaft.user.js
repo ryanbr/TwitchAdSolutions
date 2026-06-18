@@ -727,19 +727,33 @@
             // all ads in the pod even though they surface one poll at a time.
             const podLenMatch = textStr.match(/X-TV-TWITCH-AD-POD-LENGTH="(\d+)"/);
             const podLength = podLenMatch ? parseInt(podLenMatch[1], 10) : matches.length;
+            // Whether Twitch declared the pod size. When absent, podLength above is just THIS
+            // poll's match count — NOT the true pod size — so any size>=podLength comparison is
+            // meaningless and would bail after the first ad (under-spoofing later ads) and
+            // mis-fire pod_complete. Gate every size-vs-podLength check on this (mirrors
+            // GosuDRM/TTV-AB v9.6.4 + v9.7.3): unknown pod length → never early-out, never
+            // fabricate pod_complete.
+            const hasExplicitPodLength = !!podLenMatch;
             // Hot-path early-out: notifyAdComplete now runs every ad-laden poll, and a
             // long multi-ad break has hundreds of polls AFTER the whole pod is already
             // spoofed. Once the dedup set covers the pod, every remaining poll is pure
             // waste — bail before the per-match parseAttributes loop. (size at entry is
             // before this poll's additions, so the poll that completes the pod still
             // runs and attaches pod_complete; only subsequent polls short-circuit.)
-            if (spoofedSet && spoofedSet.size >= podLength) {
+            if (hasExplicitPodLength && spoofedSet && spoofedSet.size >= podLength) {
                 return;
             }
             let newSpoofed = 0;
             let firstRollType = '';
             let podCompleteSent = false;
             for (let i = 0; i < matches.length; i++) {
+                // Cap at the declared pod length (mirrors TTV-AB v9.4.1): Twitch occasionally
+                // surfaces more unique stitched-ad DATERANGEs in one poll than
+                // X-TV-TWITCH-AD-POD-LENGTH declares. Spoofing past the pod sends beacons for
+                // more ads than the pod claims — an internally-inconsistent pattern — and logs
+                // impossible totals like "5/2 pod". The pre-loop early-out only catches this
+                // across polls, not within a single poll's match list.
+                if (hasExplicitPodLength && spoofedSet && spoofedSet.size >= podLength) break;
                 // Cheap ID pre-extract for the dedup check — the DATERANGE capture
                 // always starts with ID="stitched-ad-<UUID>". Checking the dedup set
                 // before the full parseAttributes() avoids re-parsing every already-
@@ -811,8 +825,10 @@
                 // the pod never fully surfaces (some DATERANGEs missed / break ended
                 // early) pod_complete is correctly never sent — a real player wouldn't
                 // claim pod completion it didn't reach either. Defensive fallback (no
-                // dedup set): keep per-ad pod_complete so the signal isn't lost.
-                if (!spoofedSet || spoofedSet.size === podLength) {
+                // dedup set): keep per-ad pod_complete so the signal isn't lost. When the pod
+                // length is UNKNOWN, podLength is only this poll's count — never fire
+                // pod_complete (it would mis-fire on multiple polls), per TTV-AB v9.7.3.
+                if (!spoofedSet || (hasExplicitPodLength && spoofedSet.size === podLength)) {
                     batch.push(makePacket('video_ad_pod_complete'));
                     podCompleteSent = true;
                 }
@@ -2612,8 +2628,11 @@
                 ...fetchRequest.options,
                 signal: controller.signal
             });
-            clearTimeout(timeoutId);
             const responseBody = await response.text();
+            // clearTimeout AFTER the body read (mirrors TTV-AB v9.6.1): the abort must also
+            // cover a response that hangs mid-body, not just slow headers. On abort, text()
+            // rejects with AbortError and the catch below clears the timer (no-op if fired).
+            clearTimeout(timeoutId);
             const responseObject = {
                 id: fetchRequest.id,
                 status: response.status,

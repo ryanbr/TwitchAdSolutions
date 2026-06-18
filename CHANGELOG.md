@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Fixed
+- **Ad-spoof pod accounting hardened — cap at declared length + gate on declared length** — two related edge cases in the shared spoof code, both in the path that fires the GQL ad-completion beacons. (1) **Over-surface:** Twitch occasionally exposes more unique stitched-ad DATERANGEs in one poll than `X-TV-TWITCH-AD-POD-LENGTH` declares; the pre-loop early-out only caught that *across* polls, so within one poll vaft kept spoofing past the pod (beacons for more ads than the pod claims — the internally-inconsistent pattern the payload is built to avoid — and `5/2 pod` logs). A per-iteration `break` now stops at the declared length (mirrors GosuDRM/TTV-AB v9.4.1). (2) **Unknown length:** when Twitch *omits* `X-TV-TWITCH-AD-POD-LENGTH`, `podLength` falls back to the current poll's match count — so the size-vs-podLength checks were meaningless: the early-out would bail after the first ad (later ads in the pod left **unspoofed**) and `pod_complete` could fire on multiple polls. All three size comparisons (pre-loop early-out, in-loop cap, `pod_complete`) are now gated on `hasExplicitPodLength`: unknown length → never early-out (spoof every surfaced ad), never fabricate `pod_complete` (mirrors TTV-AB v9.6.4 + v9.7.3). Only affects opt-in spoof-on sessions — spoofing is default-off (vaft) (#NN)
+- **GQL relay abort timeout now covers the response body read** — the main-thread fetch relay (access tokens + spoof beacons for the worker) cleared its 5s AbortController timer as soon as headers arrived, leaving `response.text()` unbounded: a response hanging mid-body would never resolve. The worker-side per-request relay timeout already bounds the impact (backup search can't stall), so this was a leaked-promise nuisance rather than a stall — but the timer now clears after the body read, so an abort mid-body rejects through the existing catch. Mirrors GosuDRM/TTV-AB v9.6.1 (vaft) (#NN)
+
 ## v68.4.0 (2026-06-06)
 
 ### Fixed
