@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      68.4.0
+// @version      68.5.0
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 85;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 86;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -216,6 +216,8 @@
         return fn;
     }
     const loggedCsaiTypes = new Set();
+    let VodCsaiBypass = false;// Opt-in via twitchAdSolutions_vodCsaiBypass=true. See init block.
+    let VodHideOverlay = false;// Sub-flag of VodCsaiBypass. Cosmetic CSS hide only.
     let isActivelyStrippingAds = false;
     let localStorageHookFailed = false;
     const twitchWorkers = [];
@@ -2697,7 +2699,10 @@
                     const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
                     if (!loggedCsaiTypes.has(csaiType)) {
                         loggedCsaiTypes.add(csaiType);
-                        console.log('[AD DEBUG] CSAI ad request detected — type: ' + csaiType + ' (client-side ad insertion, not blockable via m3u8)');
+                        console.log('[AD DEBUG] CSAI ad request detected — type: ' + csaiType + (VodCsaiBypass ? ' — synthesizing 200 OK [] (VodCsaiBypass)' : ' (client-side ad insertion, not blockable via m3u8)'));
+                    }
+                    if (VodCsaiBypass) {
+                        return Promise.resolve(new Response('[]', {status: 200, statusText: 'OK', headers: {'Content-Type': 'application/json'}}));
                     }
                 }
             }
@@ -2829,23 +2834,52 @@
             style.textContent = '.tas-adblock-overlay { display: none !important; }';
             (document.head || document.documentElement).appendChild(style);
         }
+        // Opt-in VOD CSAI ad-decision stub. When enabled, the existing edge.ads.twitch.tv
+        // detection sites in hookFetch and the XHR.open hook return a synthetic 200 OK
+        // empty-ad-list response instead of forwarding the real request. Default OFF so
+        // the live-stream code path and existing users are unaffected. Sub-flag
+        // VodHideOverlay (default ON when master is ON) injects a CSS rule hiding the
+        // stable ad-break overlay selectors.
+        if (localStorage.getItem('twitchAdSolutions_vodCsaiBypass') === 'true') {
+            VodCsaiBypass = true;
+            if (localStorage.getItem('twitchAdSolutions_vodHideOverlay') !== 'false') {
+                VodHideOverlay = true;
+                const vodStyle = document.createElement('style');
+                // Stable data-attribute selectors only, no parent walking. Network stub above
+                // is the load-bearing piece; this is cosmetic backstop for the rare leak.
+                vodStyle.textContent = '[data-a-target="ax-overlay"],[data-a-target="video-ad-label"],[data-test-selector="ad-banner-default-id"]{display:none !important;}';
+                (document.head || document.documentElement).appendChild(vodStyle);
+            }
+            console.log('[AD DEBUG] VodCsaiBypass enabled via localStorage — edge.ads.twitch.tv synthesized 200 OK [], cosmetic overlay hide: ' + VodHideOverlay);
+        }
     } catch {}
     console.log('[AD DEBUG] Config: ReloadPlayerAfterAd = ' + ReloadPlayerAfterAd + ', ForceAccessTokenPlayerType = ' + ForceAccessTokenPlayerType + ', PinBackupPlayerType = ' + PinBackupPlayerType);
     hookWindowWorker();
     hookFetch();
     // Hook XHR to detect CSAI ad requests that bypass fetch
     const realXHROpen = XMLHttpRequest.prototype.open;
+    const realXHRSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
     XMLHttpRequest.prototype.open = maskAsNative(function(method, url) {
         if (typeof url === 'string' && url.includes('edge.ads.twitch.tv')) {
             const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
             const xhrKey = csaiType + '-xhr';
             if (!loggedCsaiTypes.has(xhrKey)) {
                 loggedCsaiTypes.add(xhrKey);
-                console.log('[AD DEBUG] CSAI ad request (XHR) detected — type: ' + csaiType);
+                console.log('[AD DEBUG] CSAI ad request (XHR) detected — type: ' + csaiType + (VodCsaiBypass ? ' — synthesizing 200 OK [] (VodCsaiBypass)' : ''));
+            }
+            if (VodCsaiBypass) {
+                // Redirect to a data: URL so the XHR completes with our synthesized payload.
+                // setRequestHeader is silently dropped because data: URLs reject custom headers.
+                this.__vaftStubbed = true;
+                return realXHROpen.call(this, method, 'data:application/json;base64,' + btoa('[]'), true);
             }
         }
         return realXHROpen.apply(this, arguments);
     }, 'open');
+    XMLHttpRequest.prototype.setRequestHeader = maskAsNative(function() {
+        if (this.__vaftStubbed) return;// data: URLs reject custom headers, skip silently
+        return realXHRSetRequestHeader.apply(this, arguments);
+    }, 'setRequestHeader');
     if (PlayerBufferingFix) {
         monitorPlayerBuffering();
     }

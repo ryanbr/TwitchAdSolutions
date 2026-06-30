@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- **Optional VOD CSAI ad-decision stub** — the existing `edge.ads.twitch.tv` detection sites in `hookFetch` and the `XMLHttpRequest.prototype.open` hook can now synthesize a `200 OK` empty-ad-list (`[]`) response instead of forwarding the real request. Defeats the VOD pre-roll / mid-roll ad-break entry (no black screen, no "Ad N of M" overlay, no pause/unpause cascade) without touching the VOD m3u8. Opt-in via `localStorage.twitchAdSolutions_vodCsaiBypass='true'` — **default OFF** so the live-stream path and existing users are unaffected. Sub-flag `twitchAdSolutions_vodHideOverlay='false'` disables the cosmetic CSS hide of the stable ad-break overlay selectors (`[data-a-target="ax-overlay"]`, `[data-a-target="video-ad-label"]`, `[data-test-selector="ad-banner-default-id"]`) while keeping the network stub — useful for debugging. Field-tested on Chrome and Firefox against muted + unmuted VODs; VOD playback is unaffected (no segment 403s, no Apollo errors). vaft only (#NN)
+
 ## v68.4.0 (2026-06-06)
 
 ### Fixed
