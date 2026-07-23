@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- **Optional CSAI ad-decision stub** (opt-in, **default OFF**) — the existing `edge.ads.twitch.tv` detection sites in `hookFetch` and the `XMLHttpRequest.prototype.open` hook can now synthesize a `200 OK` empty-ad-list (`[]`) response instead of forwarding the real request. Defeats the VOD pre-roll / mid-roll ad-break entry (no black screen, no "Ad N of M" overlay, no pause/unpause cascade) without touching the m3u8. The fetch path returns a real `data:` URL response (populated `.url`/`.type`/`.redirected`) rather than a bare `new Response()`, so it can't trip IVS WASM response validation (`NetworkError`, same class as the worker-relay v6.3.5 fix); the XHR path redirects to `data:application/json;base64,W10=` (base64 of `[]`) and no-ops `setRequestHeader` on the stubbed instance (data: URLs reject custom headers). Opt-in via `localStorage.twitchAdSolutions_vodCsaiBypass='true'`. **NOTE:** the match is host-based, so when enabled it stubs *all* CSAI ad-decisions (VOD **and** live CSAI), not VOD-only. Sub-flag `twitchAdSolutions_vodHideOverlay='false'` disables the cosmetic CSS hide of the ad-break overlay selectors (`[data-a-target="ax-overlay"]`, `[data-a-target="video-ad-label"]`, `[data-test-selector="ad-banner-default-id"]`) while keeping the network stub. Main-thread only (not injected into the worker); live-stream default path is byte-for-byte unchanged when unset. Field-tested on Chrome and Firefox against muted + unmuted VODs (no segment 403s, no Apollo errors). Original implementation by @zurarah (#246). vaft only.
+
 ## v68.4.0 (2026-06-06)
 
 ### Fixed
