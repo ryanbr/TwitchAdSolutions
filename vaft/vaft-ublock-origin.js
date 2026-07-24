@@ -2446,6 +2446,18 @@ twitch-videoad.js text/javascript
                                     cur.muted = false;
                                     playerBufferState.vaftEverUnmuted = true;
                                 }
+                                // Undo OUR pre-mute if it landed on a different element than `cur`.
+                                // `cur` is whichever <video> is first in the DOM — not necessarily the one
+                                // we muted, now that Twitch renders extra <video> elements for side/chat
+                                // ads (#249), and Firefox's PiP is browser-native so the
+                                // document.pictureInPictureElement reload guard never fires there (#248).
+                                // Gated on wasInitiallyUnmuted so it only ever clears a mute we set —
+                                // it can never unmute an ad video. No-op on a normal hard reload, where
+                                // the old element is disconnected.
+                                if (v && v !== cur && v.isConnected && v.muted && wasInitiallyUnmuted) {
+                                    v.muted = false;
+                                    console.log('[AD DEBUG] Restore — cleared leaked pre-mute on the original element (cur resolved to a different <video>) — issue #248');
+                                }
                             } catch {}
                         };
                         const listener = (e) => {
@@ -2468,6 +2480,12 @@ twitch-videoad.js text/javascript
                                         playerBufferState.vaftEverUnmuted = true;
                                         console.log('[AD DEBUG] Hard reload backstop unmute fired — element was still muted at 5500ms (initial: ' + (wasInitiallyUnmuted ? 'unmuted, we pre-muted' : 'already-muted on entry — recovering from silent Twitch re-mute') + ')');
                                     }
+                                }
+                                // Same leaked-pre-mute catch as in restore(), at the backstop — see #248.
+                                if (v && v !== cur && v.isConnected && v.muted && wasInitiallyUnmuted
+                                    && !playerBufferState.userPauseIntent) {
+                                    v.muted = false;
+                                    console.log('[AD DEBUG] Backstop — cleared leaked pre-mute on the original element (cur resolved to a different <video>) — issue #248');
                                 }
                             } catch {}
                         }, 5500);
