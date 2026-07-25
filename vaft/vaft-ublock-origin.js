@@ -2193,7 +2193,6 @@ twitch-videoad.js text/javascript
         const allVideos = document.getElementsByTagName('video');
         for (let i = 0; i < allVideos.length; i++) {
             const vid = allVideos[i];
-            if (vid === primaryVideo || vid.dataset.tasAdHidden) continue;
             let adHost = '';
             try {
                 const vidSrc = vid.currentSrc || vid.getAttribute('src') || '';
@@ -2204,11 +2203,24 @@ twitch-videoad.js text/javascript
                     }
                 }
             } catch {}
-            if (adHost) {
-                vid.dataset.tasAdHidden = '';
-                try { vid.muted = true; vid.pause(); } catch {}
+            if (adHost && vid !== primaryVideo) {
+                // Re-assert every tick rather than marking once: a React re-render can drop the
+                // inline style while keeping the element, and a one-shot marker would never re-hide it.
                 vid.style.setProperty('display', 'none', 'important');
-                console.log('[AD DEBUG] Hidden separate Twitch video ad (' + adHost + ') — issue #249');
+                try { vid.muted = true; if (!vid.paused) vid.pause(); } catch {}
+                if (!vid.dataset.tasAdHidden) {
+                    vid.dataset.tasAdHidden = '';
+                    console.log('[AD DEBUG] Hidden separate Twitch video ad (' + adHost + ') — issue #249');
+                }
+            } else if (vid.dataset.tasAdHidden && !adHost) {
+                // Twitch RECYCLES <video> nodes: an element that held an ad can later be handed real
+                // content. Without this it would stay display:none + muted forever — invisible content.
+                // Deliberately not gated on the primary check, so an element promoted to primary is
+                // still restored. Mirrors TTV-AB v12.0.2 ("safely restores videos that Twitch reuses").
+                delete vid.dataset.tasAdHidden;
+                vid.style.removeProperty('display');
+                try { vid.muted = false; } catch {}
+                console.log('[AD DEBUG] Restored recycled <video> — source is no longer an ad (#249)');
             }
         }
     }
