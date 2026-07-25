@@ -2498,7 +2498,9 @@ twitch-videoad.js text/javascript
                             document.removeEventListener('loadeddata', listener, true);
                             try {
                                 const cur = document.querySelector('video');
-                                if (cur) {
+                                // Never unmute an element the separate video-ad guard is suppressing:
+                                // `cur` is the first <video> in the DOM, which can be a side/chat ad (#249).
+                                if (cur && !cur.dataset.tasAdHidden) {
                                     cur.muted = false;
                                     playerBufferState.vaftEverUnmuted = true;
                                 }
@@ -2528,7 +2530,7 @@ twitch-videoad.js text/javascript
                         setTimeout(() => {
                             try {
                                 const cur = document.querySelector('video');
-                                if (cur && cur.muted) {
+                                if (cur && cur.muted && !cur.dataset.tasAdHidden) {
                                     if (playerBufferState.userPauseIntent) {
                                         console.log('[AD DEBUG] Hard reload backstop SKIPPED — element muted at 5500ms but userPauseIntent set (likely false-positive pause event during MSE teardown — issue #200 follow-up)');
                                     } else {
