@@ -13,7 +13,7 @@ twitch-videoad.js text/javascript
             return;
         }
     }
-    const ourTwitchAdSolutionsVersion = 620;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 621;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new-testing v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: video-swap-new-testing v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -523,7 +523,9 @@ twitch-videoad.js text/javascript
                                                 const codecsKey = 'CODECS';
                                                 if (typeof resSettings[codecsKey] === 'string' && typeof lowResSettings[codecsKey] === 'string' &&
                                                     resSettings[codecsKey].length >= 3 && lowResSettings[codecsKey].length >= 3 &&
-                                                    (resSettings[codecsKey].startsWith('hev') || resSettings[codecsKey].startsWith('hvc')) &&
+                                                    // av0 (AV1) is an enhanced codec that goes black across ad breaks exactly
+                                                    // like HEVC — same gap vaft carried until testing v674.
+                                                    (resSettings[codecsKey].startsWith('hev') || resSettings[codecsKey].startsWith('hvc') || resSettings[codecsKey].startsWith('av0')) &&
                                                     resSettings[codecsKey].substring(0, 3) !== lowResSettings[codecsKey].substring(0, 3)
                                                 ) {
                                                     console.log('swap ' + resSettings[codecsKey] + ' to ' + lowResSettings[codecsKey]);

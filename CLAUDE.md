@@ -4,7 +4,7 @@ Fork of pixeltris/TwitchAdSolutions (archived). Remote `origin` = pixeltris, rem
 
 ## Worker Blob Serialization (CRITICAL)
 
-Functions serialized via `.toString()` into the Web Worker blob CANNOT reference outer-scope variables. This includes: `processM3U8`, `stripAdSegments`, `hookWorkerFetch`, `getAccessToken`, `gqlRequest`, `hasAdTags`, `getMatchedAdSignifiers`, `notifyAdComplete`, `getStreamUrlForResolution`, `parseAttributes`, `getServerTimeFromM3u8`, `replaceServerTimeInM3u8`, `pruneStreamInfos`, `createStreamInfo`, `getWasmWorkerJs`.
+Functions serialized via `.toString()` into the Web Worker blob CANNOT reference outer-scope variables. This includes: `processM3U8`, `stripAdSegments`, `hookWorkerFetch`, `getAccessToken`, `gqlRequest`, `hasAdTags`, `getMatchedAdSignifiers`, `notifyAdComplete`, `getStreamUrlForResolution`, `parseAttributes`, `getServerTimeFromM3u8`, `replaceServerTimeInM3u8`, `pruneStreamInfos`, `createStreamInfo`, `getWasmWorkerJs`, `videoCodecFamily`.
 
 - Declare variables in `declareOptions()` (also serialized) or in the inline blob template literal
 - To pass window-scope values to the worker, inject after `declareOptions(self)`: e.g. `ReloadPlayerAfterAd = ${ReloadPlayerAfterAd};`
@@ -32,7 +32,7 @@ uBlock files have `twitch-videoad.js text/javascript` as line 1 (not valid JS â€
 
 ## Versions
 
-Bump `@version` (userscript header) and `ourTwitchAdSolutionsVersion` together for functional changes. Current: vaft 68.5.2/88, video-swap-new 1.87/55, strip 1.10/27. Testing: vaft 673.0.0/673, video-swap-new -/620.
+Bump `@version` (userscript header) and `ourTwitchAdSolutionsVersion` together for functional changes. Current: vaft 68.5.2/88, video-swap-new 1.87/55, strip 1.10/27. Testing: vaft 674.0.0/674, video-swap-new -/621.
 
 ## localStorage Config
 

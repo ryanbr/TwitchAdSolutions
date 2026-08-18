@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft-testing)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      673.0.0
+// @version      674.0.0
 // @description  Multiple solutions for blocking Twitch ads (vaft testing variant)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft_testing.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft_testing.user.js
@@ -48,7 +48,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 673;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 674;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft-testing v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft-testing v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -96,7 +96,7 @@
         scope.DisableInAdFreezeReload = false;// In-ad frozen-playhead reload escalation — readyState-independent backstop for audio-gap CSAI freezes the gap-seek can't catch (observed ~60s stalls). Default on. Set twitchAdSolutions_disableInAdFreezeReload=true to turn it OFF.
         scope.DisablePostBreakWedge = false;// Post-break video-wedge recovery (mirrors GosuDRM/TTV-AB _checkPostBreakWedge, v12.0.0). Detects "audio running, video frozen" after an ad break — playhead advancing while the decoder emits no new frames — via getVideoPlaybackQuality().totalVideoFrames, which the currentTime-based freeze checks can't see. Default on. Set twitchAdSolutions_disablePostBreakWedge=true to turn it OFF.
         scope.DisableBackgroundResume = false;// Issue #255: resume a Twitch-initiated pause while the tab is hidden (retry chain, strike-capped so a deliberate media-key pause is respected). Default on. Set twitchAdSolutions_disableBackgroundResume=true to turn it OFF.
-        scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers)
+        scope.SkipPlayerReloadOnHevc = false;// If true this will skip player reload on streams which have 2k/4k quality (if you enable this and you use the 2k/4k quality setting you'll get error #4000 / #3000 / spinning wheel on chrome based browsers). Despite the name, gates BOTH enhanced families (HEVC and AV1) since v674.
         scope.AlwaysReloadPlayerOnAd = false;// Always pause/play when entering/leaving ads
         scope.ReloadPlayerAfterAd = true;// After the ad finishes do a player reload instead of pause/play
         scope.ReloadCooldownSeconds = 30;// Minimum seconds between reloads — breaks CSAI cascades triggered by reload
@@ -181,6 +181,8 @@
             FailedBackupPlayerTypes: new Map(),// Map<playerType, timestamp> — failures expire after 15s for retry
             LoggedBackupAdsByType: null,// lazy-init to Set on first "backup has ads" log
             CycleRescuedThisBreak: false,
+            LoggedCodecMismatchThisBreak: false,// once-per-break dedup for the cross-family backup-selection warning
+            LoggedCodecUnknownThisBreak: false,// once-per-break dedup for the unverified-codec (variant with no recognisable video codec) warning
             LastBackupSwitch: 0,
             // Early reload
             EarlyReloadCount: 0,
@@ -322,6 +324,7 @@
                     ${notifyAdComplete.toString()}
                     ${getMatchedAdSignifiers.toString()}
                     ${stripAdSegments.toString()}
+                    ${videoCodecFamily.toString()}
                     ${getStreamUrlForResolution.toString()}
                     ${processM3U8.toString()}
                     ${hookWorkerFetch.toString()}
@@ -534,9 +537,26 @@
         console.log('[AD DEBUG] hookWorkerFetch (vaft)');
         const BLANK_MP4 = new Blob([Uint8Array.from(atob('AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA'), c => c.charCodeAt(0))], {type: 'video/mp4'});
         const realFetch = fetch;
+        let enhancedBlankSkipCount = 0;
         fetch = async function(url, options) {
             if (typeof url === 'string') {
-                if (AdSegmentCache.has(url)) {
+                const adCacheEntry = AdSegmentCache.get(url);
+                if (adCacheEntry !== undefined) {
+                    if (adCacheEntry.enh) {
+                        // BLANK_MP4 is AVC — feeding it to an HEVC/AV1 decoder is a hard
+                        // decode error (error 4000). A 403 is the lesser evil whether or not
+                        // a swap reload is coming (no-swap paths exist: enhanced-only masters,
+                        // SkipPlayerReloadOnHevc): the player treats it as a network error and
+                        // stalls into buffer-monitor recovery instead of a decoder teardown
+                        // (TTV-AB 13.2.3/13.2.4: no fabricated media to an enhanced player).
+                        // Log the first block, then every 50th with a running total: a bare
+                        // once-per-session latch hides how often this path actually fires.
+                        enhancedBlankSkipCount++;
+                        if (enhancedBlankSkipCount === 1 || enhancedBlankSkipCount % 50 === 0) {
+                            console.log('[AD DEBUG] Ad segment on enhanced-codec (HEVC/AV1) playlist — blocking with 403 instead of AVC blank injection (error-4000 guard), count: ' + enhancedBlankSkipCount);
+                        }
+                        return new Response('', { status: 403, statusText: 'ad segment blocked' });
+                    }
                     return new Response(BLANK_MP4);
                 }
                 url = url.trimEnd();
@@ -609,11 +629,11 @@
                                     // like HEVC — so AV1 must NOT be a swap target. If a stream has no AVC at all
                                     // (enhanced-only), this list is empty and the swap below simply doesn't fire — we leave
                                     // the stream untouched, matching TTV-AB's all-enhanced short-circuit.
-                                    const decodableResolutionList = streamInfo.ResolutionList.filter((element) => element.Codecs.startsWith('avc'));
+                                    const decodableResolutionList = streamInfo.ResolutionList.filter((element) => videoCodecFamily(element.Codecs) === 'avc');
                                     // Fire when ANY enhanced variant (HEVC or AV1) is present and we have a decodable (AVC)
                                     // target. Adding av0 here fixes native-AV1 streams that previously never triggered a
                                     // swap and played AV1 straight into the ad-break black screen.
-                                    if (AlwaysReloadPlayerOnAd || (decodableResolutionList.length > 0 && streamInfo.ResolutionList.some((element) => element.Codecs.startsWith('hev') || element.Codecs.startsWith('hvc') || element.Codecs.startsWith('av0')) && !SkipPlayerReloadOnHevc)) {
+                                    if (AlwaysReloadPlayerOnAd || (decodableResolutionList.length > 0 && streamInfo.ResolutionList.some((element) => { const f = videoCodecFamily(element.Codecs); return f === 'hevc' || f === 'av1'; }) && !SkipPlayerReloadOnHevc)) {
                                         const replaceOrAppendStreamInfAttr = (line, key, value) => {
                                             if (typeof value !== 'string' || !value) return line;
                                             const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -626,7 +646,8 @@
                                                 if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
                                                     const resSettings = parseAttributes(lines[i].substring(lines[i].indexOf(':') + 1));
                                                     const codecsKey = 'CODECS';
-                                                    if (resSettings[codecsKey].startsWith('hev') || resSettings[codecsKey].startsWith('hvc') || resSettings[codecsKey].startsWith('av0')) {
+                                                    const lineFamily = videoCodecFamily(resSettings[codecsKey]);
+                                                    if (lineFamily === 'hevc' || lineFamily === 'av1') {
                                                         const oldResolution = resSettings['RESOLUTION'];
                                                         const [targetWidth, targetHeight] = oldResolution.split('x').map(Number);
                                                         const newResolutionInfo = decodableResolutionList.sort((a, b) => {
@@ -808,7 +829,14 @@
         return AdSignifiers.filter((s) => textStr.includes(s));
     }
     // Remove ad segments from an m3u8 playlist and cache their URLs for replacement
-    function stripAdSegments(textStr, stripAllSegments, streamInfo) {
+    function stripAdSegments(textStr, stripAllSegments, streamInfo, isEnhancedPlaylist) {
+        // Cache entries record whether they came from an enhanced-codec (HEVC/AV1) playlist:
+        // the fetch hook must not answer those with the AVC BLANK_MP4 (error 4000).
+        // Swept ',live' segments (stripAllSegments / AllSegmentsAreAdSegments / inCueOut) are
+        // NOT marked enhanced: the all-stripped recovery block re-injects those same URLs as
+        // clean content, and 403ing them would turn recovery into a run of network errors.
+        // They keep the pre-existing blank-injection behavior instead.
+        const cacheEntry = (isSweptLiveSegment) => ({ t: Date.now(), enh: isEnhancedPlaylist === true && !isSweptLiveSegment });
         let hasStrippedAdSegments = false;
         let inCueOut = false;
         const liveSegments = [];
@@ -868,11 +896,11 @@
                 if (!AdSegmentCache.has(segmentUrl)) {
                     streamInfo.NumStrippedAdSegments++;
                 }
-                AdSegmentCache.set(segmentUrl, Date.now());
+                AdSegmentCache.set(segmentUrl, cacheEntry(isLiveSegment));
                 hasStrippedAdSegments = true;
             } else if (i < lines.length - 1 && line.startsWith('#EXTINF') && AdSegmentURLPatterns.some((p) => lines[i + 1].includes(p))) {
                 console.log('[AD DEBUG] Ad segment detected via URL pattern: ' + lines[i + 1]);
-                AdSegmentCache.set(lines[i + 1], Date.now());
+                AdSegmentCache.set(lines[i + 1], cacheEntry(false));
                 hasStrippedAdSegments = true;
                 streamInfo.NumStrippedAdSegments++;
             } else if (i < lines.length - 1 && line.startsWith('#EXTINF') && isLiveSegment) {
@@ -884,7 +912,7 @@
                 const partUriMatch = line.match(UriAttributeRegex);
                 const partUri = partUriMatch ? partUriMatch[1] : '';
                 if (partUri && (AdSegmentCache.has(partUri) || AdSegmentURLPatterns.some((p) => partUri.includes(p)))) {
-                    AdSegmentCache.set(partUri, Date.now());
+                    AdSegmentCache.set(partUri, cacheEntry(false));
                     lines[i] = '';
                     hasStrippedAdSegments = true;
                 }
@@ -901,7 +929,7 @@
                     hintUrl = hintMatch ? hintMatch[1] : '';
                 }
                 if (hintUrl && (AdSegmentCache.has(hintUrl) || AdSegmentURLPatterns.some((p) => hintUrl.includes(p)))) {
-                    AdSegmentCache.set(hintUrl, Date.now());
+                    AdSegmentCache.set(hintUrl, cacheEntry(false));
                     hasStrippedAdSegments = true;
                 }
             }
@@ -982,7 +1010,7 @@
         if (!streamInfo.LastAdCachePruneAt || now - streamInfo.LastAdCachePruneAt > 60000) {
             streamInfo.LastAdCachePruneAt = now;
             AdSegmentCache.forEach((value, key, map) => {
-                if (value < now - 120000) {
+                if (value.t < now - 120000) {
                     map.delete(key);
                 }
             });
@@ -1003,14 +1031,40 @@
         }
         return lines.join('\n');
     }
-    // Find the closest matching stream URL for a given resolution from a master m3u8
-    function getStreamUrlForResolution(encodingsM3u8, resolutionInfo) {
+    // Video codec family from an m3u8 CODECS attribute (video codec is listed first).
+    // 'hevc' and 'av1' are the "enhanced" families: splicing them against AVC media (or
+    // vice versa) in a live MediaSource is the error-4000 recipe. Serialized into the
+    // worker blob — must not reference outer-scope variables.
+    function videoCodecFamily(codecs) {
+        if (!codecs) return 'unknown';
+        // Scan every comma-separated entry rather than assuming the video codec is listed
+        // first — an audio-first CODECS value would otherwise silently classify 'unknown'.
+        const parts = String(codecs).toLowerCase().split(',');
+        for (let i = 0; i < parts.length; i++) {
+            const c = parts[i].trim();
+            if (c.startsWith('avc')) return 'avc';
+            if (c.startsWith('hev') || c.startsWith('hvc')) return 'hevc';
+            if (c.startsWith('av0')) return 'av1';
+        }
+        return 'unknown';
+    }
+    // Find the closest matching stream URL for a given resolution from a master m3u8.
+    // Codec-aware (TTV-AB 13.2.x): a same-codec-family variant always beats a closer
+    // resolution in a different family, because the picked URL is spliced into the live
+    // MediaSource where a codec change means error 4000. Cross-family fallback only when
+    // the backup master has no same-family variant at all (logged once).
+    function getStreamUrlForResolution(encodingsM3u8, resolutionInfo, streamInfo) {
         const encodingsLines = encodingsM3u8.split(/\r?\n/);
         const [targetWidth, targetHeight] = resolutionInfo.Resolution.split('x').map(Number);
+        const targetFamily = videoCodecFamily(resolutionInfo.Codecs);
         let matchedResolutionUrl = null;
         let matchedFrameRate = false;
         let closestResolutionUrl = null;
         let closestResolutionDifference = Infinity;
+        let unknownClosestUrl = null;
+        let unknownClosestDifference = Infinity;
+        let fallbackClosestUrl = null;
+        let fallbackClosestDifference = Infinity;
         for (let i = 0; i < encodingsLines.length - 1; i++) {
             // Accept v2 API variant URLs (raw CDN URLs without '.m3u8').
             const nextLine = encodingsLines[i + 1]?.trim();
@@ -1018,24 +1072,68 @@
                 const attributes = parseAttributes(encodingsLines[i]);
                 const resolution = attributes['RESOLUTION'];
                 const frameRate = attributes['FRAME-RATE'];
+                const family = videoCodecFamily(attributes['CODECS']);
+                // Three tiers, strongest first. A known same-family variant is a
+                // certainty and always wins. An 'unknown' family on either side (missing
+                // CODECS attribute) is a maybe — preferred over a known mismatch, but
+                // never over a real same-family match, however much closer its resolution.
+                // A known different family is the error-4000 risk and goes last.
+                // When the current stream's own family is unknown there is nothing to rank
+                // against, so every variant stays in the primary tier — the old codec-blind
+                // selection verbatim, frame-rate preference included.
+                const knownSameFamily = targetFamily === 'unknown' || (family === targetFamily && family !== 'unknown');
+                const unknownFamily = family === 'unknown';
                 if (resolution) {
-                    if (resolution == resolutionInfo.Resolution && (!matchedResolutionUrl || (!matchedFrameRate && frameRate == resolutionInfo.FrameRate))) {
-                        matchedResolutionUrl = encodingsLines[i + 1];
-                        matchedFrameRate = frameRate == resolutionInfo.FrameRate;
-                        if (matchedFrameRate) {
-                            return matchedResolutionUrl;
-                        }
-                    }
                     const [width, height] = resolution.split('x').map(Number);
                     const difference = Math.abs((width * height) - (targetWidth * targetHeight));
-                    if (difference < closestResolutionDifference) {
-                        closestResolutionUrl = encodingsLines[i + 1];
-                        closestResolutionDifference = difference;
+                    if (knownSameFamily) {
+                        if (resolution == resolutionInfo.Resolution && (!matchedResolutionUrl || (!matchedFrameRate && frameRate == resolutionInfo.FrameRate))) {
+                            matchedResolutionUrl = encodingsLines[i + 1];
+                            matchedFrameRate = frameRate == resolutionInfo.FrameRate;
+                            if (matchedFrameRate) {
+                                return matchedResolutionUrl;
+                            }
+                        }
+                        if (difference < closestResolutionDifference) {
+                            closestResolutionUrl = encodingsLines[i + 1];
+                            closestResolutionDifference = difference;
+                        }
+                    } else if (unknownFamily) {
+                        // Unknown and cross-family candidates only track closest resolution —
+                        // an exact resolution match has difference 0 and wins here anyway.
+                        if (difference < unknownClosestDifference) {
+                            unknownClosestUrl = encodingsLines[i + 1];
+                            unknownClosestDifference = difference;
+                        }
+                    } else if (difference < fallbackClosestDifference) {
+                        fallbackClosestUrl = encodingsLines[i + 1];
+                        fallbackClosestDifference = difference;
                     }
                 }
             }
         }
-        return closestResolutionUrl;
+        const sameFamilyPick = matchedResolutionUrl || closestResolutionUrl;
+        if (sameFamilyPick) {
+            return sameFamilyPick;
+        }
+        // Not a known mismatch, but nothing confirms the codec either — worth a line of
+        // its own rather than folding it into the mismatch counter, so a field dump can
+        // tell "spliced a different family" apart from "spliced something unlabelled".
+        if (unknownClosestUrl) {
+            if (streamInfo && !streamInfo.LoggedCodecUnknownThisBreak) {
+                streamInfo.LoggedCodecUnknownThisBreak = true;
+                console.log('[AD DEBUG] Backup selection codec unverified: no ' + targetFamily + ' variant in backup master for ' + resolutionInfo.Resolution + ' (' + (resolutionInfo.Codecs || 'no CODECS') + ') — using a variant with no recognisable video codec (codec unconfirmed on splice)');
+            }
+            return unknownClosestUrl;
+        }
+        if (fallbackClosestUrl && streamInfo && !streamInfo.LoggedCodecMismatchThisBreak) {
+            // Once per break: this fires for every backup player type on every ad-laden poll
+            // (an HEVC/AV1 current stream against AVC-only backup masters is the common case),
+            // so per-occurrence logging would bury the rest of the [AD DEBUG] trace.
+            streamInfo.LoggedCodecMismatchThisBreak = true;
+            console.log('[AD DEBUG] Backup selection codec mismatch: no ' + targetFamily + ' variant in backup master for ' + resolutionInfo.Resolution + ' (' + (resolutionInfo.Codecs || 'no CODECS') + ') — falling back cross-family (error-4000 risk on splice)');
+        }
+        return fallbackClosestUrl;
     }
     // Core ad-blocking logic: detect ads in m3u8, fetch backup streams, strip ad segments
     async function processM3U8(url, textStr, realFetch) {
@@ -1128,13 +1226,19 @@
             const currentResolution = streamInfo.Urls[url];
             if (!currentResolution) {
                 console.log('Ads will leak due to missing resolution info for ' + url);
-                return stripAdSegments(textStr, false, streamInfo);
+                // Codec unknown here — treat as non-enhanced (blank injection allowed), matching
+                // the pre-tagging behavior for this already-degraded path.
+                return stripAdSegments(textStr, false, streamInfo, false);
             }
-            const isHevc = currentResolution.Codecs.startsWith('hev') || currentResolution.Codecs.startsWith('hvc');
+            // AV1 parity: v68.5.0 added AV1 ('av0*') to the ModifiedM3U8 build on the master
+            // side, but this media-playlist trigger still only matched hev/hvc — so a
+            // native-AV1 stream built the AVC swap and then never reloaded onto it.
+            const currentCodecFamily = videoCodecFamily(currentResolution.Codecs);
+            const isEnhanced = currentCodecFamily === 'hevc' || currentCodecFamily === 'av1';
             // Post-ad reload-loop guard: skip if a player reload fired within the last 8s.
             const postAdReentryGuardMs = 8000;
             const recentlyReloaded = streamInfo.LastPlayerReload && (Date.now() - streamInfo.LastPlayerReload) < postAdReentryGuardMs;
-            if (((isHevc && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && streamInfo.ModifiedM3U8 && !streamInfo.IsUsingModifiedM3U8 && !recentlyReloaded) {
+            if (((isEnhanced && !SkipPlayerReloadOnHevc) || AlwaysReloadPlayerOnAd) && streamInfo.ModifiedM3U8 && !streamInfo.IsUsingModifiedM3U8 && !recentlyReloaded) {
                 streamInfo.IsUsingModifiedM3U8 = true;
                 streamInfo.LastPlayerReload = Date.now();
                 postMessage({
@@ -1163,7 +1267,7 @@
                 // break saves ~20 wasted fetches — the backup wouldn't help anyway since
                 // every player type has the same CSAI ads.
                 if (IsAdStrippingEnabled) {
-                    textStr = stripAdSegments(textStr, false, streamInfo);
+                    textStr = stripAdSegments(textStr, false, streamInfo, isEnhanced);
                 }
                 // Early reload during prolonged freeze — mirrors the check in the normal
                 // backup-search path which we'd otherwise skip entirely by returning early
@@ -1219,7 +1323,7 @@
                 streamInfo.SawCSAIFastPath = true;
                 console.log('[AD DEBUG] CSAI fast path — all segments live, skipping backup search');
                 if (IsAdStrippingEnabled) {
-                    textStr = stripAdSegments(textStr, false, streamInfo);
+                    textStr = stripAdSegments(textStr, false, streamInfo, isEnhanced);
                 }
                 postMessage({
                     key: 'UpdateAdBlockBanner',
@@ -1371,7 +1475,7 @@
                     }
                     if (encodingsM3u8) {
                         try {
-                            const streamM3u8Url = getStreamUrlForResolution(encodingsM3u8, currentResolution);
+                            const streamM3u8Url = getStreamUrlForResolution(encodingsM3u8, currentResolution, streamInfo);
                             const streamM3u8Response = await realFetch(streamM3u8Url);
                             if (streamM3u8Response.status == 200) {
                                 const m3u8Text = await streamM3u8Response.text();
@@ -1494,10 +1598,12 @@
             } else {
                 console.log('[AD DEBUG] No ad-free backup stream found — ads may leak. Tried: ' + playerTypesToTry.slice(startIndex).join(', '));
             }
-            // TODO: Improve hevc stripping. It should always strip when there is a codec mismatch (both ways)
-            const stripHevc = isHevc && streamInfo.ModifiedM3U8;
-            if (IsAdStrippingEnabled || stripHevc) {
-                textStr = stripAdSegments(textStr, stripHevc, streamInfo);
+            // TODO: strip should also fire on a backup/current codec mismatch (both ways) —
+            // a cross-family backup commit (see the getStreamUrlForResolution fallback log)
+            // still splices unstripped when the current stream is AVC or has no ModifiedM3U8.
+            const stripEnhanced = isEnhanced && streamInfo.ModifiedM3U8;
+            if (IsAdStrippingEnabled || stripEnhanced) {
+                textStr = stripAdSegments(textStr, stripEnhanced, streamInfo, isEnhanced);
             } else if (!backupM3u8) {
                 console.log('[AD DEBUG] Ad stripping disabled and no backup — ads WILL show');
             }
@@ -1594,6 +1700,8 @@
                 }
                 if (streamInfo.LoggedBackupAdsByType) streamInfo.LoggedBackupAdsByType.clear();
                 streamInfo.LoggedContamReorderThisBreak = false;
+                streamInfo.LoggedCodecMismatchThisBreak = false;
+                streamInfo.LoggedCodecUnknownThisBreak = false;
                 streamInfo.CleanPlaylistCount = 0;
                 streamInfo.PendingAdEndAt = 0;
                 streamInfo.AdEndBounceCount = 0;
