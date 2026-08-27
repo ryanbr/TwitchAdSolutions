@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      68.5.5
+// @version      68.5.6
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 91;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 92;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -338,6 +338,7 @@
                     ${getMatchedAdSignifiers.toString()}
                     ${notifyAdComplete.toString()}
                     ${stripAdSegments.toString()}
+                    ${videoCodecFamily.toString()}
                     ${getStreamUrlForResolution.toString()}
                     ${processM3U8.toString()}
                     ${hookWorkerFetch.toString()}
@@ -601,7 +602,11 @@
                                                 const resolutionInfo = {
                                                     Resolution: resolution,
                                                     FrameRate: attributes['FRAME-RATE'],
-                                                    Codecs: attributes['CODECS'],
+                                                    // || '' like the three below: CODECS is optional on a STREAM-INF line,
+                                                    // and this entry is pushed whenever RESOLUTION is present. Leaving it
+                                                    // undefined is what let a direct .startsWith() reader throw and hang the
+                                                    // master-playlist fetch. Keep every field in this object string-valued.
+                                                    Codecs: attributes['CODECS'] || '',
                                                     // AUDIO/VIDEO/SUBTITLES groups are copied onto the rewritten STREAM-INF
                                                     // line during HEVC→AVC fallback so the variant references matching media
                                                     // groups (mirrors TTV-AB v6.7.5 parser fix). Without these, the rewritten
@@ -627,11 +632,11 @@
                                     // like HEVC — so AV1 must NOT be a swap target. If a stream has no AVC at all
                                     // (enhanced-only), this list is empty and the swap below simply doesn't fire — we leave
                                     // the stream untouched, matching TTV-AB's all-enhanced short-circuit.
-                                    const decodableResolutionList = streamInfo.ResolutionList.filter((element) => element.Codecs.startsWith('avc'));
+                                    const decodableResolutionList = streamInfo.ResolutionList.filter((element) => videoCodecFamily(element.Codecs) === 'avc');
                                     // Fire when ANY enhanced variant (HEVC or AV1) is present and we have a decodable (AVC)
                                     // target. Adding av0 here fixes native-AV1 streams that previously never triggered a
                                     // swap and played AV1 straight into the ad-break black screen.
-                                    if (AlwaysReloadPlayerOnAd || (decodableResolutionList.length > 0 && streamInfo.ResolutionList.some((element) => element.Codecs.startsWith('hev') || element.Codecs.startsWith('hvc') || element.Codecs.startsWith('av0')) && !SkipPlayerReloadOnHevc)) {
+                                    if (AlwaysReloadPlayerOnAd || (decodableResolutionList.length > 0 && streamInfo.ResolutionList.some((element) => { const f = videoCodecFamily(element.Codecs); return f === 'hevc' || f === 'av1'; }) && !SkipPlayerReloadOnHevc)) {
                                         // Replace OR append a STREAM-INF attribute (replace if present, append after a comma if absent).
                                         // Used below to copy AUDIO/VIDEO/SUBTITLES groups from the closest non-HEVC variant onto the
                                         // rewritten HEVC line, matching TTV-AB v6.7.5's parser fix.
@@ -647,7 +652,8 @@
                                                 if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
                                                     const resSettings = parseAttributes(lines[i].substring(lines[i].indexOf(':') + 1));
                                                     const codecsKey = 'CODECS';
-                                                    if (resSettings[codecsKey].startsWith('hev') || resSettings[codecsKey].startsWith('hvc') || resSettings[codecsKey].startsWith('av0')) {
+                                                    const lineFamily = videoCodecFamily(resSettings[codecsKey]);
+                                                    if (lineFamily === 'hevc' || lineFamily === 'av1') {
                                                         const oldResolution = resSettings['RESOLUTION'];
                                                         const [targetWidth, targetHeight] = oldResolution.split('x').map(Number);
                                                         const targetArea = targetWidth * targetHeight;
@@ -1075,6 +1081,23 @@
         return lines.join('\n');
     }
     // Find the closest matching stream URL for a given resolution from a master m3u8
+    // Video codec family from an m3u8 CODECS attribute. Returns 'unknown' for a missing or
+    // unrecognised attribute rather than throwing — a variant without CODECS used to blow up
+    // the raw .startsWith() checks below and hang the master-playlist fetch. Ported from
+    // testing v674. Serialized into the worker blob — must not reference outer-scope variables.
+    function videoCodecFamily(codecs) {
+        if (!codecs) return 'unknown';
+        // Scan every comma-separated entry rather than assuming the video codec is listed
+        // first — an audio-first CODECS value would otherwise silently classify 'unknown'.
+        const parts = String(codecs).toLowerCase().split(',');
+        for (let i = 0; i < parts.length; i++) {
+            const c = parts[i].trim();
+            if (c.startsWith('avc')) return 'avc';
+            if (c.startsWith('hev') || c.startsWith('hvc')) return 'hevc';
+            if (c.startsWith('av0')) return 'av1';
+        }
+        return 'unknown';
+    }
     function getStreamUrlForResolution(encodingsM3u8, resolutionInfo) {
         const encodingsLines = encodingsM3u8.split(/\r?\n/);
         const [targetWidth, targetHeight] = resolutionInfo.Resolution.split('x').map(Number);
@@ -1225,7 +1248,8 @@
             // side, but this media-playlist trigger still only matched hev/hvc — so a
             // native-AV1 stream built the AVC swap and then never reloaded onto it, playing
             // AV1 straight into the strip path. Ported from testing v674.
-            const isEnhanced = currentResolution.Codecs.startsWith('hev') || currentResolution.Codecs.startsWith('hvc') || currentResolution.Codecs.startsWith('av0');
+            const currentCodecFamily = videoCodecFamily(currentResolution.Codecs);
+            const isEnhanced = currentCodecFamily === 'hevc' || currentCodecFamily === 'av1';
             // Post-ad reload-loop guard: at end of break, IsUsingModifiedM3U8 is reset to false.
             // If post-ad continuation markers arrive within ~8s, the next ad-detect fires the
             // HEVC reload AGAIN because the !IsUsingModifiedM3U8 condition is satisfied — causing

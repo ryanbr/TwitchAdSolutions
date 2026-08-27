@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft-testing)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      676.0.0
+// @version      677.0.0
 // @description  Multiple solutions for blocking Twitch ads (vaft testing variant)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft_testing.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft_testing.user.js
@@ -48,7 +48,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 676;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 677;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft-testing v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft-testing v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -608,7 +608,11 @@
                                                 const resolutionInfo = {
                                                     Resolution: resolution,
                                                     FrameRate: attributes['FRAME-RATE'],
-                                                    Codecs: attributes['CODECS'],
+                                                    // || '' like the three below: CODECS is optional on a STREAM-INF line,
+                                                    // and this entry is pushed whenever RESOLUTION is present. Leaving it
+                                                    // undefined is what let a direct .startsWith() reader throw and hang the
+                                                    // master-playlist fetch. Keep every field in this object string-valued.
+                                                    Codecs: attributes['CODECS'] || '',
                                                     Audio: attributes['AUDIO'] || '',
                                                     Video: attributes['VIDEO'] || '',
                                                     Subtitles: attributes['SUBTITLES'] || '',
