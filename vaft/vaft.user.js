@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      68.5.3
+// @version      68.5.4
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 89;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 90;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -476,7 +476,7 @@
                         if (e.data.hasAds && (driftCatchUpInterval || driftCatchUpTimeout)) {
                             if (driftCatchUpInterval) { clearInterval(driftCatchUpInterval); driftCatchUpInterval = null; }
                             if (driftCatchUpTimeout) { clearTimeout(driftCatchUpTimeout); driftCatchUpTimeout = null; }
-                            try { document.querySelector('video').playbackRate = 1.0; } catch {}
+                            try { getPlayerVideoElement().playbackRate = 1.0; } catch {}
                         }
                     } else if (e.data.key == 'PauseResumePlayer') {
                         doTwitchPlayerTask(true, false);
@@ -1925,7 +1925,7 @@
         console.log('[AD DEBUG] Drift correction: catching up at ' + DriftCorrectionRate + 'x');
         driftCatchUpInterval = setInterval(() => {
             try {
-                const vid = document.querySelector('video');
+                const vid = getPlayerVideoElement();
                 if (vid && vid.buffered.length > 0) {
                     if (vid.buffered.end(vid.buffered.length - 1) - vid.currentTime <= 1) {
                         vid.playbackRate = 1.0;
@@ -2301,6 +2301,17 @@
         const nextDelay = shouldThrottle ? PlayerBufferingDelay * 3 : PlayerBufferingDelay;
         setTimeout(monitorPlayerBuffering, nextDelay);
     }
+    // document.querySelector('video') returns the first <video> in the DOM, which since
+    // July 2026 can be a separate Twitch ad element beside the player or in chat (#249).
+    // Skip anything the guard below has marked, so mute/playbackRate work always lands on
+    // the real player instead of being aimed at — or skipped because of — an ad element.
+    function getPlayerVideoElement() {
+        const videos = document.getElementsByTagName('video');
+        for (let i = 0; i < videos.length; i++) {
+            if (!videos[i].dataset.tasAdHidden) { return videos[i]; }
+        }
+        return null;
+    }
     // Hide Twitch's ad break / Turbo promo / stream display ad overlays when we're already blocking ads
     function hideTwitchAdOverlays() {
         if (!cachedPlayerRootDiv || !cachedPlayerRootDiv.isConnected) return;
@@ -2344,7 +2355,9 @@
                 vid.style.setProperty('display', 'none', 'important');
                 try { vid.muted = true; if (!vid.paused) vid.pause(); } catch {}
                 if (!vid.dataset.tasAdHidden) {
-                    vid.dataset.tasAdHidden = '';
+                    // '1', not '': dataset returns the empty string as-is, which is falsy —
+                    // the dedup, the restore branch and getPlayerVideoElement() would all misread it.
+                    vid.dataset.tasAdHidden = '1';
                     console.log('[AD DEBUG] Hidden separate Twitch video ad (' + adHost + ') — issue #249');
                 }
             } else if (vid.dataset.tasAdHidden && !adHost) {
@@ -2612,7 +2625,7 @@
             // Existing 3000ms LS-restore timer below acts as ultimate backstop.
             if (hardReload) {
                 try {
-                    const v = document.querySelector('video');
+                    const v = getPlayerVideoElement();
                     const wasInitiallyUnmuted = v && !v.muted;
                     // Issue #200 fix: also set up restore+backstop when the element is already
                     // muted IF vaft has successfully unmuted at any point earlier this session.
@@ -2643,10 +2656,8 @@
                             document.removeEventListener('playing', listener, true);
                             document.removeEventListener('loadeddata', listener, true);
                             try {
-                                const cur = document.querySelector('video');
-                                // Never unmute an element the separate video-ad guard is suppressing:
-                                // `cur` is the first <video> in the DOM, which can be a side/chat ad (#249).
-                                if (cur && !cur.dataset.tasAdHidden) {
+                                const cur = getPlayerVideoElement();
+                                if (cur) {
                                     cur.muted = false;
                                     playerBufferState.vaftEverUnmuted = true;
                                 }
@@ -2680,8 +2691,8 @@
                         // — pause+mute are conceptually correlated by Twitch's player code).
                         setTimeout(() => {
                             try {
-                                const cur = document.querySelector('video');
-                                if (cur && cur.muted && !cur.dataset.tasAdHidden) {
+                                const cur = getPlayerVideoElement();
+                                if (cur && cur.muted) {
                                     if (playerBufferState.userPauseIntent) {
                                         console.log('[AD DEBUG] Hard reload backstop SKIPPED — element muted at 5500ms but userPauseIntent set (likely false-positive pause event during MSE teardown — issue #200 follow-up)');
                                     } else {
