@@ -31,7 +31,7 @@ jobs:
 
     - name: Validate uBlock scripts
       run: |
-        for f in vaft/vaft-ublock-origin.js vaft/vaft-testing-ublock-origin.js video-swap-new/video-swap-new-ublock-origin.js; do
+        for f in vaft/vaft-ublock-origin.js vaft/vaft-testing-ublock-origin.js video-swap-new/video-swap-new-ublock-origin.js video-swap-new/video-swap-new-ublock-origin-testing.js; do
           echo "Validating $f..."
           tail -n +2 "$f" | acorn --ecma2022 > /dev/null
         done
