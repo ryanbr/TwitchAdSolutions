@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 90;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 91;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -2479,8 +2479,15 @@ twitch-videoad.js text/javascript
             // Soft reload for 'post-ad' (smooth transition, no black screen teardown).
             // Apple touch devices: force soft — a new media instance needs a user tap to resume (black-screen + play icon).
             const hardReload = reloadKind === 'early' && !iosSoftReload;
+            // Decoupled from hardReload on purpose. The iOS downgrade below exists to keep the
+            // media element user-gesture-blessed, which only requires skipping the new media
+            // instance — not the token refresh. An 'early' reload after an autoplay commit
+            // depends on refreshAccessToken to leave the autoplay-scoped 360p variant ladder;
+            // without it an iOS user stays pinned at 360p, since 'early' is always downgraded
+            // here and 'post-ad' is soft by definition, so nothing refreshes the token again.
+            const refreshToken = reloadKind === 'early';
             if (reloadKind === 'early' && iosSoftReload) {
-                console.log('[AD DEBUG] iOS/iPadOS: downgrading hard reload to soft — keeps media element user-gesture-blessed (avoids black-screen + play-icon stall). Opt-out: twitchAdSolutions_iosSoftReload=false');
+                console.log('[AD DEBUG] iOS/iPadOS: downgrading hard reload to soft — keeps media element user-gesture-blessed (avoids black-screen + play-icon stall); access-token refresh is retained, so Source quality can still be restored. Opt-out: twitchAdSolutions_iosSoftReload=false');
             }
             console.log('[AD DEBUG] Reloading Twitch player' + (hardReload ? ' (hard)' : ' (soft)'));
             // Pre-mute through hard reload to hide MSE-teardown audio click; restored on
@@ -2566,10 +2573,14 @@ twitch-videoad.js text/javascript
             // Without this, userPauseIntent would falsely flip to true during the
             // reload window, blocking the 5500ms backstop's unmute on stuck-muted
             // recovery (issue #200 follow-up).
-            if (hardReload) {
+            // refreshToken as well as hardReload: a token refresh swaps the source even when
+            // the media instance is reused (the iOS downgrade), so Twitch can still dispatch
+            // the teardown pause. Unarmed, that reads as userPauseIntent and suppresses the
+            // unmute backstop — muted stream on exactly the devices this path targets.
+            if (hardReload || refreshToken) {
                 playerBufferState.weJustPaused = Date.now();
             }
-            playerState.setSrc({ isNewMediaPlayerInstance: hardReload, refreshAccessToken: hardReload });
+            playerState.setSrc({ isNewMediaPlayerInstance: hardReload, refreshAccessToken: refreshToken });
             postTwitchWorkerMessage('TriggeredPlayerReload');
             player.play()?.catch?.(() => {});
             // Always restore muted/volume state after reload — Chrome autoplay policy can force muted.
