@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 674;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 675;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft-testing v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft-testing v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -2407,7 +2407,9 @@ twitch-videoad.js text/javascript
                 vid.style.setProperty('display', 'none', 'important');
                 try { vid.muted = true; if (!vid.paused) vid.pause(); } catch {}
                 if (!vid.dataset.tasAdHidden) {
-                    vid.dataset.tasAdHidden = '';
+                    // '1', not '': dataset returns the empty string as-is, which is falsy —
+                    // the once-only log and the restore branch below would both misread it.
+                    vid.dataset.tasAdHidden = '1';
                     console.log('[AD DEBUG] Hidden separate Twitch video ad (' + adHost + ') — issue #249');
                 }
             } else if (vid.dataset.tasAdHidden && !adHost) {
