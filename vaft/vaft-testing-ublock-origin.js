@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 676;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 677;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft-testing v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft-testing v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -597,7 +597,11 @@ twitch-videoad.js text/javascript
                                                 const resolutionInfo = {
                                                     Resolution: resolution,
                                                     FrameRate: attributes['FRAME-RATE'],
-                                                    Codecs: attributes['CODECS'],
+                                                    // || '' like the three below: CODECS is optional on a STREAM-INF line,
+                                                    // and this entry is pushed whenever RESOLUTION is present. Leaving it
+                                                    // undefined is what let a direct .startsWith() reader throw and hang the
+                                                    // master-playlist fetch. Keep every field in this object string-valued.
+                                                    Codecs: attributes['CODECS'] || '',
                                                     Audio: attributes['AUDIO'] || '',
                                                     Video: attributes['VIDEO'] || '',
                                                     Subtitles: attributes['SUBTITLES'] || '',
