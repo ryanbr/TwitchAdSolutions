@@ -37,7 +37,7 @@ twitch-videoad.js text/javascript
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 677;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 678;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft-testing v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft-testing v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -297,7 +297,14 @@ twitch-videoad.js text/javascript
                 }
                 // Pre-check: verify we can fetch the worker JS before injecting
                 let prefetchedWorkerJs = null;
+                // Timing probe (testing only): getWasmWorkerJs uses a SYNCHRONOUS XHR on the main
+                // thread. Target is a blob: URL so it should be a memory read, but it runs inside
+                // the Worker constructor while the player is starting. Measure before deciding
+                // whether it is worth restructuring.
+                const tSourceFetch = performance.now();
+                const sourceWasCached = !!(getWasmWorkerJs.cache && getWasmWorkerJs.cache[twitchBlobUrl]);
                 try { prefetchedWorkerJs = getWasmWorkerJs(twitchBlobUrl); } catch {}
+                const sourceFetchMs = performance.now() - tSourceFetch;
                 if (!prefetchedWorkerJs) {
                     super(twitchBlobUrl, options);
                     console.log('[AD DEBUG] Failed to fetch worker JS — falling back to unmodified worker');
@@ -307,6 +314,10 @@ twitch-videoad.js text/javascript
                 // hookWorkerFetch twice and double-process every m3u8 response.
                 // Reuse it as-is, but still register below so its messages are heard.
                 const alreadyHooked = prefetchedWorkerJs.includes('hookWorkerFetch');
+                // Blob-build clock: 17 serialized functions (~112 KB) assembled per construction.
+                // V8 ropes make the concatenation lazy, so the real cost is the flatten + Blob
+                // copy at createObjectURL — which is why the clock spans both.
+                const tBlobBuild = performance.now();
                 const newBlobStr = `
                     const pendingFetchRequests = new Map();
                     ${hasAdTags.toString()}
@@ -428,6 +439,10 @@ twitch-videoad.js text/javascript
                         try { originalRevokeObjectURL.call(URL, injectedBlobUrl); } catch {}
                     }
                     injectedBlobUrl = URL.createObjectURL(new Blob([newBlobStr]));
+                    console.log('[AD DEBUG] Worker injection timing — source fetch: ' + sourceFetchMs.toFixed(1)
+                        + 'ms (' + (sourceWasCached ? 'cached' : 'sync XHR') + '), blob build+copy: '
+                        + (performance.now() - tBlobBuild).toFixed(1) + 'ms, payload: '
+                        + (newBlobStr.length / 1024).toFixed(0) + ' KB');
                     super(injectedBlobUrl, options);
                 }
                 twitchWorkers.length = 0;
