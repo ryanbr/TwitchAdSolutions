@@ -13,7 +13,7 @@ twitch-videoad.js text/javascript
             return;
         }
     }
-    const ourTwitchAdSolutionsVersion = 619;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 620;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions video-swap-new-testing v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: video-swap-new-testing v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -230,7 +230,10 @@ twitch-videoad.js text/javascript
                     console.log('[AD DEBUG] Failed to fetch worker JS — falling back to unmodified worker');
                     return;
                 }
-                console.log('[AD DEBUG] Worker intercepted — injecting ad-block hooks');
+                // Blob already carries our hooks: re-injecting would install
+                // hookWorkerFetch twice and double-process every m3u8 response.
+                // Reuse it as-is, but still register below so its messages are heard.
+                const alreadyHooked = prefetchedWorkerJs.includes('hookWorkerFetch');
                 const newBlobStr = `
                     const pendingFetchRequests = new Map();
                     ${hasAdTags.toString()}
@@ -310,11 +313,18 @@ twitch-videoad.js text/javascript
                     // Twitch's player logic without a diagnostic.
                     try { eval(workerString); } catch (e) { console.error('[AD DEBUG] Worker eval failed — Twitch player logic not loaded:', e); }
                 `
-                if (injectedBlobUrl && originalRevokeObjectURL) {
-                    try { originalRevokeObjectURL.call(URL, injectedBlobUrl); } catch {}
+                if (alreadyHooked) {
+                    super(twitchBlobUrl, options);
+                    console.log('[AD DEBUG] Worker already hooked — reusing without re-injection');
+                } else {
+                    console.log('[AD DEBUG] Worker intercepted — injecting ad-block hooks');
+                    // Revoke previous blob URL to prevent memory accumulation across worker replacements
+                    if (injectedBlobUrl && originalRevokeObjectURL) {
+                        try { originalRevokeObjectURL.call(URL, injectedBlobUrl); } catch {}
+                    }
+                    injectedBlobUrl = URL.createObjectURL(new Blob([newBlobStr]));
+                    super(injectedBlobUrl, options);
                 }
-                injectedBlobUrl = URL.createObjectURL(new Blob([newBlobStr]));
-                super(injectedBlobUrl, options);
                 twitchWorkers.length = 0;
                 twitchWorkers.push(this);
                 this.addEventListener('message', (e) => {

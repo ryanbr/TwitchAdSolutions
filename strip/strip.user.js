@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (strip) - BAD, DON'T USE THIS
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      1.9
+// @version      1.10
 // @description  Multiple solutions for blocking Twitch ads (strip)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/strip/strip.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/strip/strip.user.js
@@ -13,7 +13,7 @@
 // ==/UserScript==
 (function() {
     'use strict';
-    const ourTwitchAdSolutionsVersion = 26;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 27;// Used to prevent conflicts with outdated versions of the scripts
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log("skipping strip as there's another script active. ourVersion:" + ourTwitchAdSolutionsVersion + " activeVersion:" + window.twitchAdSolutionsVersion);
         window.twitchAdSolutionsVersion = ourTwitchAdSolutionsVersion;
@@ -114,6 +114,10 @@
                     console.log('[AD DEBUG] Failed to fetch worker JS — falling back to unmodified worker');
                     return;
                 }
+                // Blob already carries our hooks: re-injecting would install
+                // hookWorkerFetch twice and double-process every m3u8 response.
+                // Reuse it as-is, but still register below so its messages are heard.
+                const alreadyHooked = prefetchedWorkerJs.includes('hookWorkerFetch');
                 const newBlobStr = `
                     ${stripAdSegments.toString()}
                     ${hookWorkerFetch.toString()}
@@ -132,7 +136,12 @@
                     hookWorkerFetch();
                     eval(workerString);
                 `;
-                super(URL.createObjectURL(new Blob([newBlobStr])), options);
+                if (alreadyHooked) {
+                    super(twitchBlobUrl, options);
+                    console.log('[AD DEBUG] Worker already hooked — reusing without re-injection');
+                } else {
+                    super(URL.createObjectURL(new Blob([newBlobStr])), options);
+                }
                 twitchWorkers.length = 0;
                 twitchWorkers.push(this);
                 this.addEventListener('message', (e) => {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      68.5.1
+// @version      68.5.2
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 87;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 88;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -328,7 +328,10 @@
                     console.log('[AD DEBUG] Failed to fetch worker JS — falling back to unmodified worker');
                     return;
                 }
-                console.log('[AD DEBUG] Worker intercepted — injecting ad-block hooks');
+                // Blob already carries our hooks: re-injecting would install
+                // hookWorkerFetch twice and double-process every m3u8 response.
+                // Reuse it as-is, but still register below so its messages are heard.
+                const alreadyHooked = prefetchedWorkerJs.includes('hookWorkerFetch');
                 const newBlobStr = `
                     const pendingFetchRequests = new Map();
                     ${hasAdTags.toString()}
@@ -443,12 +446,18 @@
                     // throw (vaft hooks installed above), but Twitch's logic wouldn't run.
                     try { eval(workerString); } catch (e) { console.error('[AD DEBUG] Worker eval failed — Twitch player logic not loaded:', e); }
                 `;
-                // Revoke previous blob URL to prevent memory accumulation across worker replacements
-                if (injectedBlobUrl && originalRevokeObjectURL) {
-                    try { originalRevokeObjectURL.call(URL, injectedBlobUrl); } catch {}
+                if (alreadyHooked) {
+                    super(twitchBlobUrl, options);
+                    console.log('[AD DEBUG] Worker already hooked — reusing without re-injection');
+                } else {
+                    console.log('[AD DEBUG] Worker intercepted — injecting ad-block hooks');
+                    // Revoke previous blob URL to prevent memory accumulation across worker replacements
+                    if (injectedBlobUrl && originalRevokeObjectURL) {
+                        try { originalRevokeObjectURL.call(URL, injectedBlobUrl); } catch {}
+                    }
+                    injectedBlobUrl = URL.createObjectURL(new Blob([newBlobStr]));
+                    super(injectedBlobUrl, options);
                 }
-                injectedBlobUrl = URL.createObjectURL(new Blob([newBlobStr]));
-                super(injectedBlobUrl, options);
                 twitchWorkers.length = 0;
                 twitchWorkers.push(this);
                 this.addEventListener('message', (e) => {
