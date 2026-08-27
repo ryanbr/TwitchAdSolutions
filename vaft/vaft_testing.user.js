@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft-testing)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      675.0.0
+// @version      676.0.0
 // @description  Multiple solutions for blocking Twitch ads (vaft testing variant)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft_testing.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft_testing.user.js
@@ -48,7 +48,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 675;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 676;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft-testing v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft-testing v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -2674,8 +2674,15 @@
             // Soft reload for 'post-ad' (smooth transition, no black screen teardown).
             // Apple touch devices: force soft — a new media instance needs a user tap to resume (black-screen + play icon).
             const hardReload = reloadKind === 'early' && !iosSoftReload;
+            // Decoupled from hardReload on purpose. The iOS downgrade below exists to keep the
+            // media element user-gesture-blessed, which only requires skipping the new media
+            // instance — not the token refresh. An 'early' reload after an autoplay commit
+            // depends on refreshAccessToken to leave the autoplay-scoped 360p variant ladder;
+            // without it an iOS user stays pinned at 360p, since 'early' is always downgraded
+            // here and 'post-ad' is soft by definition, so nothing refreshes the token again.
+            const refreshToken = reloadKind === 'early';
             if (reloadKind === 'early' && iosSoftReload) {
-                console.log('[AD DEBUG] iOS/iPadOS: downgrading hard reload to soft — keeps media element user-gesture-blessed (avoids black-screen + play-icon stall). Opt-out: twitchAdSolutions_iosSoftReload=false');
+                console.log('[AD DEBUG] iOS/iPadOS: downgrading hard reload to soft — keeps media element user-gesture-blessed (avoids black-screen + play-icon stall); access-token refresh is retained, so Source quality can still be restored. Opt-out: twitchAdSolutions_iosSoftReload=false');
             }
             console.log('[AD DEBUG] Reloading Twitch player' + (hardReload ? ' (hard)' : ' (soft)'));
             // Pre-mute through hard reload to hide MSE-teardown audio click. Multi-event
@@ -2766,10 +2773,14 @@
             }
             // Filter MSE-teardown pause events from tripping userPauseIntent during
             // the reload window — v637 follow-up to v636 (issue #200).
-            if (hardReload) {
+            // refreshToken as well as hardReload: a token refresh swaps the source even when
+            // the media instance is reused (the iOS downgrade), so Twitch can still dispatch
+            // the teardown pause. Unarmed, that reads as userPauseIntent and suppresses the
+            // unmute backstop — muted stream on exactly the devices this path targets.
+            if (hardReload || refreshToken) {
                 playerBufferState.weJustPaused = Date.now();
             }
-            playerState.setSrc({ isNewMediaPlayerInstance: hardReload, refreshAccessToken: hardReload });
+            playerState.setSrc({ isNewMediaPlayerInstance: hardReload, refreshAccessToken: refreshToken });
             postTwitchWorkerMessage('TriggeredPlayerReload');
             // Resume playback with retry — only if user hadn't manually paused
             if (!wasPaused) {
