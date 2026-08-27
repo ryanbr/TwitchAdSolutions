@@ -1,5 +1,10 @@
 ## Unreleased
 
+## v68.5.7 (2026-08-27)
+
+### Debug Logging
+- **CSAI ad requests are now counted, split by whether vaft saw a break** — the `edge.ads.twitch.tv` detection was a once-per-session latch: one line per ad type, then silence for the rest of the session. It told you CSAI *exists*, not how much of it there is, and it could not surface the case that matters — an ad request arriving while the m3u8 carried no ad markers at all, so no break was detected, nothing was stripped, no backup was searched, and nothing else reached the log. Those are ads vaft is structurally blind to, and there was no way to tell how many there were. Requests are now counted per ad type and split on whether a detected break was in progress (`playerBufferState.inAdBreak`, already maintained from the worker's banner messages), logging the first and every tenth with both running totals and the channel on each line, so the ratio is readable from any single line of a session dump. Field-motivated: a `CSAI ad request detected — type: midroll` line was observed on `winton_ow2` with no `Ad detected` following it anywhere. Logging only — no behaviour change on any path. vaft only; video-swap-new and strip carry the same CSAI hooks but have no `playerBufferState`, so they cannot classify in-break vs not and keep the latch.
+
 ## v68.5.6 (2026-08-27)
 
 ### Added
