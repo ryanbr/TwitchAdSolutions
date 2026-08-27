@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TwitchAdSolutions (vaft)
 // @namespace    https://github.com/ryanbr/TwitchAdSolutions
-// @version      68.5.6
+// @version      68.5.7
 // @description  Multiple solutions for blocking Twitch ads (vaft)
 // @updateURL    https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
 // @downloadURL  https://github.com/ryanbr/TwitchAdSolutions/raw/master/vaft/vaft.user.js
@@ -47,7 +47,7 @@
         }
     }
     'use strict';
-    const ourTwitchAdSolutionsVersion = 92;// Used to prevent conflicts with outdated versions of the scripts
+    const ourTwitchAdSolutionsVersion = 93;// Used to prevent conflicts with outdated versions of the scripts
     console.log('[AD DEBUG] TwitchAdSolutions vaft v' + ourTwitchAdSolutionsVersion + ' loading');
     if (typeof window.twitchAdSolutionsVersion !== 'undefined' && window.twitchAdSolutionsVersion >= ourTwitchAdSolutionsVersion) {
         console.log('[AD DEBUG] CONFLICT: vaft v' + ourTwitchAdSolutionsVersion + ' skipped — another script already active (v' + window.twitchAdSolutionsVersion + '). Remove duplicate scripts.');
@@ -217,7 +217,24 @@
         fn.toString = () => 'function ' + name + '() { [native code] }';
         return fn;
     }
-    const loggedCsaiTypes = new Set();
+    // CSAI ad-request counters, keyed by type and split on whether a detected ad break was in
+    // progress. The no-break tally is the point: an ad served while the m3u8 carried no markers
+    // is one vaft never sees — nothing stripped, no backup searched, nothing else in the log.
+    // The previous once-per-session latch could not surface that at all.
+    const csaiRequestCounts = Object.create(null);
+    function countCsaiRequest(csaiType, transport) {
+        const inBreak = playerBufferState.inAdBreak === true;
+        const c = csaiRequestCounts[csaiType] || (csaiRequestCounts[csaiType] = { inBreak: 0, noBreak: 0 });
+        const n = inBreak ? ++c.inBreak : ++c.noBreak;
+        // First, then every 10th. Both totals and the channel ride on every line so a dump
+        // spanning several channels reads as a ratio without the whole session in hand.
+        if (n !== 1 && n % 10 !== 0) { return; }
+        const chan = playerBufferState.channelName ? ' on ' + playerBufferState.channelName : '';
+        console.log('[AD DEBUG] CSAI ad request (' + transport + ') — type: ' + csaiType + chan
+            + (inBreak ? ' during a detected break' : ' with NO break detected — vaft never saw this ad')
+            + ' | this type so far: ' + c.noBreak + ' unseen, ' + c.inBreak + ' during breaks'
+            + (n === 1 ? ' (client-side insertion, not blockable via m3u8)' : ''));
+    }
     let isActivelyStrippingAds = false;
     let localStorageHookFailed = false;
     const twitchWorkers = [];
@@ -2917,10 +2934,7 @@
                 }
                 if (url.includes('edge.ads.twitch.tv')) {
                     const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
-                    if (!loggedCsaiTypes.has(csaiType)) {
-                        loggedCsaiTypes.add(csaiType);
-                        console.log('[AD DEBUG] CSAI ad request detected — type: ' + csaiType + ' (client-side ad insertion, not blockable via m3u8)');
-                    }
+                    countCsaiRequest(csaiType, 'fetch');
                 }
             }
             return realFetch.apply(this, arguments);
@@ -3070,11 +3084,7 @@
     XMLHttpRequest.prototype.open = maskAsNative(function(method, url) {
         if (typeof url === 'string' && url.includes('edge.ads.twitch.tv')) {
             const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
-            const xhrKey = csaiType + '-xhr';
-            if (!loggedCsaiTypes.has(xhrKey)) {
-                loggedCsaiTypes.add(xhrKey);
-                console.log('[AD DEBUG] CSAI ad request (XHR) detected — type: ' + csaiType);
-            }
+            countCsaiRequest(csaiType, 'xhr');
         }
         return realXHROpen.apply(this, arguments);
     }, 'open');
