@@ -1,5 +1,8 @@
 ## Unreleased
 
+### Added
+- **Replay (VOD) ads are now blocked** — replays never reached vaft's ad handling: their playlist is requested from usher `/vod/`, not `/channel/hls/`, so `processM3U8` finds no `streamInfo` and returns it untouched, and the buffer monitor gates on `content.type === 'live'`. Replay ads are client-side only, requested from `edge.ads.twitch.tv` and `amazon-adsystem.com`, which the fetch and XHR hooks already saw but only counted. On a replay page (`/videos/<id>` or `/<channel>/v/<id>`) those requests are now failed like a network block (fetch rejects, XHR is pointed at an unresolvable `.invalid` host), and the player falls through to the video. The page type is checked per request because Twitch is a single-page app; live pages take exactly the old path. Logs the first and every tenth block. Opt out with `twitchAdSolutions_disableVodAdBlock=true`. vaft only
+
 ## v68.5.7 (2026-08-27)
 
 ### Debug Logging
