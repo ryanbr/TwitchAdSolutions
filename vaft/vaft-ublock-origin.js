@@ -209,6 +209,27 @@ twitch-videoad.js text/javascript
             + ' | this type so far: ' + c.noBreak + ' unseen, ' + c.inBreak + ' during breaks'
             + (n === 1 ? ' (client-side insertion, not blockable via m3u8)' : ''));
     }
+    // Replays (VODs) never reach the m3u8 path: their playlist comes from usher /vod/, not
+    // /channel/hls/, so processM3U8 finds no streamInfo and returns it untouched. Replay ads
+    // are client-side only, requested from the hosts below. On a replay page those requests
+    // are failed like a network block, and the player falls through to the video instead of
+    // the ad. Live pages are never touched. Opt out with twitchAdSolutions_disableVodAdBlock=true.
+    const VodAdRequestHosts = [/(^|\.)edge\.ads\.twitch\.tv$/, /(^|\.)amazon-adsystem\.com$/];
+    let disableVodAdBlock = false;
+    try { disableVodAdBlock = localStorage.getItem('twitchAdSolutions_disableVodAdBlock') === 'true'; } catch {}
+    let vodAdBlockCount = 0;
+    // Twitch is a single-page app, so the page type is checked per request, not at load.
+    function shouldBlockVodAdRequest(url, transport) {
+        if (disableVodAdBlock || !/^\/(videos\/\d+|[^/]+\/v\/\d+)/.test(document.location.pathname)) return false;
+        let host = '';
+        try { host = new URL(String(url), document.location.href).hostname.toLowerCase(); } catch { return false; }
+        if (!VodAdRequestHosts.some((re) => re.test(host))) return false;
+        const n = ++vodAdBlockCount;
+        if (n === 1 || n % 10 === 0) {
+            console.log('[AD DEBUG] Blocked replay (VOD) ad request (' + transport + ') #' + n + ' — ' + host);
+        }
+        return true;
+    }
     let isActivelyStrippingAds = false;
     let localStorageHookFailed = false;
     const twitchWorkers = [];
@@ -2723,6 +2744,9 @@ twitch-videoad.js text/javascript
         const realFetch = window.fetch;
         window.realFetch = realFetch;
         window.fetch = maskAsNative(function(url, init) {
+            if (shouldBlockVodAdRequest(typeof url === 'string' ? url : (url && url.url) || url, 'fetch')) {
+                return Promise.reject(new TypeError('Failed to fetch'));
+            }
             if (typeof url === 'string') {
                 if (url.includes('gql')) {
                     let deviceId = init.headers['X-Device-Id'];
@@ -2924,6 +2948,11 @@ twitch-videoad.js text/javascript
     hookFetch();
     const realXHROpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = maskAsNative(function(method, url) {
+        if (shouldBlockVodAdRequest(url, 'xhr')) {
+            // .invalid never resolves, so the request fails with an ordinary network error.
+            arguments[1] = 'https://blocked-vod-ad.invalid/';
+            return realXHROpen.apply(this, arguments);
+        }
         if (typeof url === 'string' && url.includes('edge.ads.twitch.tv')) {
             const csaiType = url.includes('bp=midroll') ? 'midroll' : url.includes('bp=preroll') ? 'preroll' : 'unknown';
             countCsaiRequest(csaiType, 'xhr');
